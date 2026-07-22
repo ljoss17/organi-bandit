@@ -1,4 +1,4 @@
-use chrono::DateTime;
+use chrono::{DateTime, Weekday};
 use chrono_tz::Tz;
 use serde::{Deserialize, Serialize};
 
@@ -12,14 +12,21 @@ pub struct Season {
     #[serde(with = "serde_datetime")]
     end_day: DateTime<Tz>,
     tournament: Tournament,
+    game_days: Vec<Weekday>,
 }
 
 impl Season {
-    pub fn new(start_day: DateTime<Tz>, end_day: DateTime<Tz>, tournament: Tournament) -> Self {
+    pub fn new(
+        start_day: DateTime<Tz>,
+        end_day: DateTime<Tz>,
+        tournament: Tournament,
+        game_days: Vec<Weekday>,
+    ) -> Self {
         Self {
             start_day,
             end_day,
             tournament,
+            game_days,
         }
     }
 
@@ -57,6 +64,7 @@ mod tests {
                 TournamentType::RoundRobin,
                 TournamentType::SingleElimination,
             ),
+            vec![Weekday::Sat],
         );
         let game_day = Zurich.with_ymd_and_hms(2026, 6, 2, 8, 45, 0).unwrap();
 
@@ -75,6 +83,7 @@ mod tests {
                 TournamentType::RoundRobin,
                 TournamentType::SingleElimination,
             ),
+            vec![Weekday::Sat],
         );
         let game_day = Zurich.with_ymd_and_hms(2025, 6, 2, 8, 45, 0).unwrap();
 
@@ -93,6 +102,7 @@ mod tests {
                 TournamentType::RoundRobin,
                 TournamentType::SingleElimination,
             ),
+            vec![Weekday::Sat],
         );
 
         let json = serde_json::to_string(&season).expect("serialization should succeed");
