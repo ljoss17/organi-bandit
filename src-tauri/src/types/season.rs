@@ -1,4 +1,4 @@
-use chrono::{DateTime, Weekday};
+use chrono::{DateTime, Datelike, NaiveDate, Weekday};
 use chrono_tz::Tz;
 use serde::{Deserialize, Serialize};
 
@@ -45,11 +45,22 @@ impl Season {
     pub fn is_game_day_in_range(&self, game_day: DateTime<Tz>) -> bool {
         game_day.ge(&self.start_day) && game_day.le(&self.end_day)
     }
+
+    pub fn get_all_game_days(&self) -> Vec<NaiveDate> {
+        let end_day = self.end_day.date_naive();
+        self.start_day
+            .date_naive()
+            .iter_days()
+            .take_while(|day| day <= &end_day)
+            .filter(|day| self.game_days.contains(&day.weekday()))
+            .collect::<Vec<_>>()
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use chrono::NaiveDate;
     use chrono::TimeZone;
     use chrono_tz::Europe::Zurich;
 
@@ -112,5 +123,56 @@ mod tests {
         assert_eq!(season.start_day(), deserialized.start_day());
         assert_eq!(season.end_day(), deserialized.end_day());
         assert_eq!(season.tournament(), deserialized.tournament());
+    }
+
+    #[test]
+    fn test_get_all_game_days() {
+        let season = Season::new(
+            Zurich.with_ymd_and_hms(2026, 5, 13, 8, 45, 0).unwrap(),
+            Zurich.with_ymd_and_hms(2026, 7, 1, 18, 0, 0).unwrap(),
+            Tournament::new(
+                TournamentType::RoundRobin,
+                TournamentType::SingleElimination,
+            ),
+            vec![Weekday::Sat],
+        );
+
+        let expected_days = vec![
+            NaiveDate::from_ymd_opt(2026, 5, 16).unwrap(),
+            NaiveDate::from_ymd_opt(2026, 5, 23).unwrap(),
+            NaiveDate::from_ymd_opt(2026, 5, 30).unwrap(),
+            NaiveDate::from_ymd_opt(2026, 6, 6).unwrap(),
+            NaiveDate::from_ymd_opt(2026, 6, 13).unwrap(),
+            NaiveDate::from_ymd_opt(2026, 6, 20).unwrap(),
+            NaiveDate::from_ymd_opt(2026, 6, 27).unwrap(),
+        ];
+
+        let computed_days = season.get_all_game_days();
+
+        assert_eq!(expected_days.len(), computed_days.len());
+
+        for i in 0..expected_days.len() {
+            assert_eq!(expected_days[i], computed_days[i]);
+        }
+    }
+
+    #[test]
+    fn test_empty_game_days() {
+        let season = Season::new(
+            Zurich.with_ymd_and_hms(2026, 5, 4, 8, 45, 0).unwrap(),
+            Zurich.with_ymd_and_hms(2026, 5, 8, 18, 0, 0).unwrap(),
+            Tournament::new(
+                TournamentType::RoundRobin,
+                TournamentType::SingleElimination,
+            ),
+            vec![Weekday::Sat],
+        );
+
+        let computed_days = season.get_all_game_days();
+
+        assert!(
+            computed_days.is_empty(),
+            "expected game days to be an empty list"
+        );
     }
 }
