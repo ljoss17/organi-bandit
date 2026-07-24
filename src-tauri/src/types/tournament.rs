@@ -1,7 +1,7 @@
 use serde_derive::{Deserialize, Serialize};
 
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
-pub struct Tournament {
+pub struct TournamentSelection {
     group_stage: TournamentType,
     playoff: TournamentType,
 }
@@ -12,7 +12,7 @@ pub enum TournamentType {
     SingleElimination,
 }
 
-impl Tournament {
+impl TournamentSelection {
     pub fn new(group_stage: TournamentType, playoff: TournamentType) -> Self {
         Self {
             group_stage,
