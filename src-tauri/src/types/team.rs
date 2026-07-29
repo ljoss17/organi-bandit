@@ -1,1 +1,27 @@
-pub type Team = String;
+use serde::{Deserialize, Serialize};
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq)]
+pub struct Team {
+    name: String,
+    seed: Option<u32>,
+}
+
+impl Team {
+    pub fn new(name: &str, seed: Option<u32>) -> Self {
+        Self {
+            name: name.to_owned(),
+            seed,
+        }
+    }
+
+    pub fn get_name(&self) -> &str {
+        &self.name
+    }
+
+    pub fn get_seed(&self) -> u32 {
+        if let Some(seed) = self.seed {
+            return seed;
+        }
+        0
+    }
+}
