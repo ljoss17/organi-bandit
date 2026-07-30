@@ -1,8 +1,10 @@
+let teams = [];
+
 async function loadTeams() {
   const teamsList = document.getElementById("teams-list");
 
   try {
-    const teams = await window.__TAURI__.core.invoke("read_team_list", {
+    teams = await window.__TAURI__.core.invoke("read_team_list", {
       filePath: "resources/teams.json",
     });
 
@@ -17,3 +19,31 @@ async function loadTeams() {
 }
 
 loadTeams();
+
+function collectSeasonInput() {
+  const startDate = document.getElementById("start-date").value;
+  const endDate = document.getElementById("end-date").value;
+  const maxGamesPerDay = Number(document.getElementById("max-games-per-day").value);
+  const gameDays = Array.from(document.querySelectorAll('input[name="game-days"]:checked')).map(
+    (checkbox) => checkbox.value,
+  );
+
+  return { startDate, endDate, maxGamesPerDay, gameDays, teams };
+}
+
+document.getElementById("generate-schedule").addEventListener("click", async () => {
+  const { startDate, endDate, maxGamesPerDay, gameDays, teams } = collectSeasonInput();
+
+  try {
+    const schedule = await window.__TAURI__.core.invoke("tauri_generate_schedule", {
+      teams,
+      startDayStr: startDate,
+      endDayStr: endDate,
+      maxGamesPerDay,
+      gameDaysStr: gameDays,
+    });
+    console.log(schedule);
+  } catch (error) {
+    console.error(error);
+  }
+});

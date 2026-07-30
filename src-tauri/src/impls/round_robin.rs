@@ -12,8 +12,9 @@ pub struct RoundRobin;
 
 impl Tournament for RoundRobin {
     fn validate_parameters(
+        &self,
         teams: &[Team],
-        game_days: Vec<NaiveDate>,
+        game_days: &[NaiveDate],
         max_games_per_day: usize,
     ) -> bool {
         let mut inner_teams = teams.to_vec();
@@ -27,8 +28,9 @@ impl Tournament for RoundRobin {
     }
 
     fn compute_schedule(
+        &self,
         teams: &[Team],
-        game_days: Vec<NaiveDate>,
+        game_days: &[NaiveDate],
         max_games_per_day: usize,
     ) -> Vec<Game> {
         let mut rng = rand::rng();
@@ -41,7 +43,7 @@ impl Tournament for RoundRobin {
 
         let mut schedule = vec![];
 
-        let mut game_day_scheduler = GameDayScheduler::new(&game_days, max_games_per_day);
+        let mut game_day_scheduler = GameDayScheduler::new(game_days, max_games_per_day);
 
         for _ in 0..number_teams - 1 {
             for i in 0..(number_teams / 2) {
@@ -119,11 +121,18 @@ mod tests {
         let season = Season::new(
             start_day(),
             end_day_1(),
+            1,
             TournamentSelection::new(RoundRobin, SingleElimination::new(false)),
             vec![Weekday::Sat],
         );
 
-        let result = RoundRobin::validate_parameters(&teams(), season.get_all_game_days(), 1);
+        let round_robin = RoundRobin;
+
+        let result = round_robin.validate_parameters(
+            &teams(),
+            &season.get_all_game_days(),
+            season.max_games_per_day(),
+        );
 
         assert!(result, "passed parameters are not valid");
     }
@@ -133,11 +142,18 @@ mod tests {
         let season = Season::new(
             start_day(),
             end_day_2(),
+            2,
             TournamentSelection::new(RoundRobin, SingleElimination::new(false)),
             vec![Weekday::Sat],
         );
 
-        let result = RoundRobin::validate_parameters(&teams(), season.get_all_game_days(), 2);
+        let round_robin = RoundRobin;
+
+        let result = round_robin.validate_parameters(
+            &teams(),
+            &season.get_all_game_days(),
+            season.max_games_per_day(),
+        );
 
         assert!(result, "passed parameters are not valid");
     }
@@ -152,15 +168,58 @@ mod tests {
         let season = Season::new(
             start_day(),
             end_day_1(),
+            1,
             TournamentSelection::new(RoundRobin, SingleElimination::new(false)),
             vec![Weekday::Sat],
         );
 
-        let result = RoundRobin::compute_schedule(&teams(), season.get_all_game_days(), 1);
+        let round_robin = RoundRobin;
+
+        let result = round_robin.compute_schedule(
+            &teams(),
+            &season.get_all_game_days(),
+            season.max_games_per_day(),
+        );
 
         assert_eq!(result.len(), expecte_total_number_games);
 
-        assert_schedule(&result, &teams(), season.get_all_game_days(), 1);
+        assert_schedule(
+            &result,
+            &teams(),
+            season.get_all_game_days(),
+            season.max_games_per_day(),
+        );
+    }
+
+    #[test]
+    fn test_a() {
+        let teams = [
+            Team::new("Fribourg Cardinals", None),
+            Team::new("Suzerains", None),
+            Team::new("Geneva Whoppers", None),
+            Team::new("Lausanne Owls", None),
+            Team::new("Monthey Rhinos", None),
+            Team::new("Morges Bandits", None),
+            Team::new("Yverdon Ducs", None),
+            Team::new("Lausanne Rockets", None),
+        ];
+        let season = Season::new(
+            start_day(),
+            end_day_1(),
+            4,
+            TournamentSelection::new(RoundRobin, SingleElimination::new(false)),
+            vec![Weekday::Sat],
+        );
+
+        let round_robin = RoundRobin;
+
+        let result = round_robin.validate_parameters(
+            &teams,
+            &season.get_all_game_days(),
+            season.max_games_per_day(),
+        );
+
+        assert!(result, "passed parameters are not valid");
     }
 
     #[test]
@@ -173,15 +232,27 @@ mod tests {
         let season = Season::new(
             start_day(),
             end_day_2(),
+            2,
             TournamentSelection::new(RoundRobin, SingleElimination::new(false)),
             vec![Weekday::Sat],
         );
 
-        let result = RoundRobin::compute_schedule(&teams(), season.get_all_game_days(), 2);
+        let round_robin = RoundRobin;
+
+        let result = round_robin.compute_schedule(
+            &teams(),
+            &season.get_all_game_days(),
+            season.max_games_per_day(),
+        );
 
         assert_eq!(result.len(), expecte_total_number_games);
 
-        assert_schedule(&result, &teams(), season.get_all_game_days(), 2);
+        assert_schedule(
+            &result,
+            &teams(),
+            season.get_all_game_days(),
+            season.max_games_per_day(),
+        );
     }
 
     fn assert_schedule(

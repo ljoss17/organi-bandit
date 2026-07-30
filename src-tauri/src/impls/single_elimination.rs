@@ -14,8 +14,9 @@ pub struct SingleElimination {
 
 impl Tournament for SingleElimination {
     fn validate_parameters(
+        &self,
         teams: &[Team],
-        game_days: Vec<NaiveDate>,
+        game_days: &[NaiveDate],
         max_games_per_day: usize,
     ) -> bool {
         if teams.len() < 2 {
@@ -27,8 +28,9 @@ impl Tournament for SingleElimination {
     }
 
     fn compute_schedule(
+        &self,
         teams: &[Team],
-        game_days: Vec<NaiveDate>,
+        game_days: &[NaiveDate],
         max_games_per_day: usize,
     ) -> Vec<Game> {
         let number_of_teams = teams.len();
@@ -40,7 +42,7 @@ impl Tournament for SingleElimination {
         inner_teams.sort_by_key(|team| team.get_seed());
 
         let mut schedule = vec![];
-        let mut game_day_scheduler = GameDayScheduler::new(&game_days, max_games_per_day);
+        let mut game_day_scheduler = GameDayScheduler::new(game_days, max_games_per_day);
 
         for i in 0..number_of_byes {
             let home_team = inner_teams[i].clone();
@@ -180,12 +182,18 @@ mod tests {
         let season = Season::new(
             start_day(),
             end_day(),
+            2,
             TournamentSelection::new(RoundRobin, SingleElimination::new(false)),
             vec![Weekday::Sat],
         );
 
-        let result =
-            SingleElimination::validate_parameters(&teams(), season.get_all_game_days(), 2);
+        let single_elimination = SingleElimination::new(false);
+
+        let result = single_elimination.validate_parameters(
+            &teams(),
+            &season.get_all_game_days(),
+            season.max_games_per_day(),
+        );
 
         assert!(result, "passed parameters should be valid");
     }
@@ -195,12 +203,18 @@ mod tests {
         let season = Season::new(
             start_day(),
             end_day_later(),
+            2,
             TournamentSelection::new(RoundRobin, SingleElimination::new(false)),
             vec![Weekday::Sat],
         );
 
-        let result =
-            SingleElimination::validate_parameters(&teams_bigger(), season.get_all_game_days(), 2);
+        let single_elimination = SingleElimination::new(false);
+
+        let result = single_elimination.validate_parameters(
+            &teams_bigger(),
+            &season.get_all_game_days(),
+            season.max_games_per_day(),
+        );
 
         assert!(result, "passed parameters should be valid");
     }
@@ -210,12 +224,18 @@ mod tests {
         let season = Season::new(
             start_day(),
             end_day(),
+            1,
             TournamentSelection::new(RoundRobin, SingleElimination::new(false)),
             vec![Weekday::Sat],
         );
 
-        let result =
-            SingleElimination::validate_parameters(&teams(), season.get_all_game_days(), 1);
+        let single_elimination = SingleElimination::new(false);
+
+        let result = single_elimination.validate_parameters(
+            &teams(),
+            &season.get_all_game_days(),
+            season.max_games_per_day(),
+        );
 
         assert!(!result, "passed parameters should not be valid");
     }
@@ -225,11 +245,18 @@ mod tests {
         let season = Season::new(
             start_day(),
             end_day(),
+            2,
             TournamentSelection::new(RoundRobin, SingleElimination::new(false)),
             vec![Weekday::Sat],
         );
 
-        let schedule = SingleElimination::compute_schedule(&teams(), season.get_all_game_days(), 2);
+        let single_elimination = SingleElimination::new(false);
+
+        let schedule = single_elimination.compute_schedule(
+            &teams(),
+            &season.get_all_game_days(),
+            season.max_games_per_day(),
+        );
 
         assert_schedule(&schedule, &teams(), season.get_all_game_days(), 2)
     }
@@ -239,14 +266,25 @@ mod tests {
         let season = Season::new(
             start_day(),
             end_day_later(),
+            2,
             TournamentSelection::new(RoundRobin, SingleElimination::new(false)),
             vec![Weekday::Sat],
         );
 
-        let schedule =
-            SingleElimination::compute_schedule(&teams_bigger(), season.get_all_game_days(), 2);
+        let single_elimination = SingleElimination::new(false);
 
-        assert_schedule(&schedule, &teams_bigger(), season.get_all_game_days(), 2)
+        let schedule = single_elimination.compute_schedule(
+            &teams_bigger(),
+            &season.get_all_game_days(),
+            season.max_games_per_day(),
+        );
+
+        assert_schedule(
+            &schedule,
+            &teams_bigger(),
+            season.get_all_game_days(),
+            season.max_games_per_day(),
+        )
     }
 
     fn assert_schedule(

@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use crate::types::team::Team;
 use crate::utils::serde_datetime;
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Game {
     home_team: Team,
     away_team: Team,

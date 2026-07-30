@@ -33,6 +33,11 @@
           </div>
         </div>
 
+        <div class="field">
+          <label for="max-games-per-day">Max games per day</label>
+          <input type="number" id="max-games-per-day" name="max-games-per-day" min="1" step="1" value="1" />
+        </div>
+
         <fieldset class="game-days">
           <legend>Game days</legend>
           <div class="day-options">
@@ -45,6 +50,8 @@
             <label><input type="checkbox" name="game-days" value="Sun" /> Sunday</label>
           </div>
         </fieldset>
+
+        <button type="button" id="generate-schedule">Generate schedule</button>
       </main>
     </div>
 
