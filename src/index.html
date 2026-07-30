@@ -8,12 +8,46 @@
   </head>
 
   <body>
-    <main class="container">
-      <h1>Welcome to Organi-Bandit</h1>
+    <div class="page">
+      <aside class="sidebar">
+        <h2>Teams</h2>
+        <ul id="teams-list"></ul>
+      </aside>
 
-      <div class="row">
-        <img src="/assets/morges_bandits.png" class="logo bandits" alt="Bandits logo" />
-      </div>
-    </main>
+      <main class="container">
+        <div class="row">
+          <img src="/assets/morges_bandits.png" class="logo bandits" alt="Bandits logo" />
+          <h1>Organi-Bandit</h1>
+          <img src="/assets/morges_bandits.png" class="logo bandits" alt="Bandits logo" />
+        </div>
+
+        <div class="season-dates">
+          <div class="field">
+            <label for="start-date">Start date</label>
+            <input type="date" id="start-date" name="start-date" />
+          </div>
+
+          <div class="field">
+            <label for="end-date">End date</label>
+            <input type="date" id="end-date" name="end-date" />
+          </div>
+        </div>
+
+        <fieldset class="game-days">
+          <legend>Game days</legend>
+          <div class="day-options">
+            <label><input type="checkbox" name="game-days" value="Mon" /> Monday</label>
+            <label><input type="checkbox" name="game-days" value="Tue" /> Tuesday</label>
+            <label><input type="checkbox" name="game-days" value="Wed" /> Wednesday</label>
+            <label><input type="checkbox" name="game-days" value="Thu" /> Thursday</label>
+            <label><input type="checkbox" name="game-days" value="Fri" /> Friday</label>
+            <label><input type="checkbox" name="game-days" value="Sat" /> Saturday</label>
+            <label><input type="checkbox" name="game-days" value="Sun" /> Sunday</label>
+          </div>
+        </fieldset>
+      </main>
+    </div>
+
+    <script type="module" src="main.js"></script>
   </body>
 </html>

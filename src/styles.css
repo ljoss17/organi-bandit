@@ -17,12 +17,37 @@
   -webkit-text-size-adjust: 100%;
 }
 
-.container {
+.page {
+  display: flex;
+  flex-direction: row;
+  min-height: 100vh;
+}
+
+.sidebar {
+  width: 220px;
+  flex-shrink: 0;
+  padding: 1em;
+  border-right: 1px solid #d9d9d9;
+  overflow-y: auto;
+}
+
+.sidebar ul {
+  list-style: none;
   margin: 0;
-  padding-top: 10vh;
+  padding: 0;
+}
+
+.sidebar li {
+  padding: 0.4em 0;
+}
+
+.container {
+  flex: 1;
+  margin: 0;
+  padding-top: 2em;
   display: flex;
   flex-direction: column;
-  justify-content: center;
+  justify-content: flex-start;
   text-align: center;
 }
 
@@ -40,6 +65,51 @@
 .row {
   display: flex;
   justify-content: center;
+  align-items: center;
+}
+
+.season-dates {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1em;
+  margin-top: 2em;
+}
+
+.field {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 0.6em;
+}
+
+.game-days {
+  margin-top: 1.5em;
+  border: 1px solid #d9d9d9;
+  border-radius: 8px;
+  padding: 0.8em 1em;
+}
+
+.game-days legend {
+  padding: 0 0.4em;
+  font-weight: 500;
+}
+
+.day-options {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.4em 1.2em;
+}
+
+.day-options label {
+  display: flex;
+  align-items: center;
+  gap: 0.3em;
+}
+
+.field label {
+  font-weight: 500;
 }
 
 a {
