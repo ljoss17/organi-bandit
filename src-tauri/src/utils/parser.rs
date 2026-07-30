@@ -4,6 +4,7 @@ use std::path::Path;
 use crate::errors::AppError;
 use crate::types::team::Team;
 
+#[tauri::command]
 pub fn read_team_list(file_path: &Path) -> Result<Vec<Team>, AppError> {
     let content = fs::read_to_string(file_path).map_err(AppError::ReadError)?;
     let teams: Vec<Team> = serde_json::from_str(&content).map_err(AppError::DeserializeError)?;

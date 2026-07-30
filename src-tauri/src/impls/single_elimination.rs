@@ -1,10 +1,12 @@
 use chrono::NaiveDate;
+use serde::{Deserialize, Serialize};
 
 use crate::traits::tournament::Tournament;
 use crate::types::game::Game;
 use crate::types::team::Team;
 use crate::utils::game_day_scheduler::GameDayScheduler;
 
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
 pub struct SingleElimination {
     // Define if schedule should contain team names or not
     anonymous: bool,
@@ -133,8 +135,9 @@ mod tests {
     use chrono_tz::Europe::Zurich;
     use chrono_tz::Tz;
 
+    use crate::impls::round_robin::RoundRobin;
     use crate::types::season::Season;
-    use crate::types::tournament::{TournamentSelection, TournamentType};
+    use crate::types::tournament::TournamentSelection;
 
     fn start_day() -> DateTime<Tz> {
         Zurich.with_ymd_and_hms(2026, 5, 13, 8, 45, 0).unwrap()
@@ -177,10 +180,7 @@ mod tests {
         let season = Season::new(
             start_day(),
             end_day(),
-            TournamentSelection::new(
-                TournamentType::RoundRobin,
-                TournamentType::SingleElimination,
-            ),
+            TournamentSelection::new(RoundRobin, SingleElimination::new(false)),
             vec![Weekday::Sat],
         );
 
@@ -195,10 +195,7 @@ mod tests {
         let season = Season::new(
             start_day(),
             end_day_later(),
-            TournamentSelection::new(
-                TournamentType::RoundRobin,
-                TournamentType::SingleElimination,
-            ),
+            TournamentSelection::new(RoundRobin, SingleElimination::new(false)),
             vec![Weekday::Sat],
         );
 
@@ -213,10 +210,7 @@ mod tests {
         let season = Season::new(
             start_day(),
             end_day(),
-            TournamentSelection::new(
-                TournamentType::RoundRobin,
-                TournamentType::SingleElimination,
-            ),
+            TournamentSelection::new(RoundRobin, SingleElimination::new(false)),
             vec![Weekday::Sat],
         );
 
@@ -231,10 +225,7 @@ mod tests {
         let season = Season::new(
             start_day(),
             end_day(),
-            TournamentSelection::new(
-                TournamentType::RoundRobin,
-                TournamentType::SingleElimination,
-            ),
+            TournamentSelection::new(RoundRobin, SingleElimination::new(false)),
             vec![Weekday::Sat],
         );
 
@@ -248,10 +239,7 @@ mod tests {
         let season = Season::new(
             start_day(),
             end_day_later(),
-            TournamentSelection::new(
-                TournamentType::RoundRobin,
-                TournamentType::SingleElimination,
-            ),
+            TournamentSelection::new(RoundRobin, SingleElimination::new(false)),
             vec![Weekday::Sat],
         );
 

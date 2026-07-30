@@ -2,24 +2,29 @@ use chrono::{DateTime, Datelike, NaiveDate, Weekday};
 use chrono_tz::Tz;
 use serde::{Deserialize, Serialize};
 
+use crate::traits::tournament::Tournament;
 use crate::types::tournament::TournamentSelection;
 use crate::utils::serde_datetime;
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct Season {
+pub struct Season<G: Tournament, P: Tournament> {
     #[serde(with = "serde_datetime")]
     start_day: DateTime<Tz>,
     #[serde(with = "serde_datetime")]
     end_day: DateTime<Tz>,
-    tournament: TournamentSelection,
+    tournament: TournamentSelection<G, P>,
     game_days: Vec<Weekday>,
 }
 
-impl Season {
+impl<G, P> Season<G, P>
+where
+    G: Tournament,
+    P: Tournament,
+{
     pub fn new(
         start_day: DateTime<Tz>,
         end_day: DateTime<Tz>,
-        tournament: TournamentSelection,
+        tournament: TournamentSelection<G, P>,
         game_days: Vec<Weekday>,
     ) -> Self {
         Self {
@@ -38,7 +43,7 @@ impl Season {
         &self.end_day
     }
 
-    pub fn tournament(&self) -> &TournamentSelection {
+    pub fn tournament(&self) -> &TournamentSelection<G, P> {
         &self.tournament
     }
 
@@ -59,22 +64,20 @@ impl Season {
 
 #[cfg(test)]
 mod tests {
+    use crate::impls::round_robin::RoundRobin;
+    use crate::impls::single_elimination::SingleElimination;
+
     use super::*;
     use chrono::NaiveDate;
     use chrono::TimeZone;
     use chrono_tz::Europe::Zurich;
-
-    use crate::types::tournament::TournamentType;
 
     #[test]
     fn test_correct_game_day() {
         let season = Season::new(
             Zurich.with_ymd_and_hms(2026, 5, 13, 8, 45, 0).unwrap(),
             Zurich.with_ymd_and_hms(2026, 9, 22, 18, 0, 0).unwrap(),
-            TournamentSelection::new(
-                TournamentType::RoundRobin,
-                TournamentType::SingleElimination,
-            ),
+            TournamentSelection::new(RoundRobin, SingleElimination::new(false)),
             vec![Weekday::Sat],
         );
         let game_day = Zurich.with_ymd_and_hms(2026, 6, 2, 8, 45, 0).unwrap();
@@ -90,10 +93,7 @@ mod tests {
         let season = Season::new(
             Zurich.with_ymd_and_hms(2026, 5, 13, 8, 45, 0).unwrap(),
             Zurich.with_ymd_and_hms(2026, 9, 22, 18, 0, 0).unwrap(),
-            TournamentSelection::new(
-                TournamentType::RoundRobin,
-                TournamentType::SingleElimination,
-            ),
+            TournamentSelection::new(RoundRobin, SingleElimination::new(false)),
             vec![Weekday::Sat],
         );
         let game_day = Zurich.with_ymd_and_hms(2025, 6, 2, 8, 45, 0).unwrap();
@@ -109,15 +109,12 @@ mod tests {
         let season = Season::new(
             Zurich.with_ymd_and_hms(2026, 5, 13, 8, 45, 0).unwrap(),
             Zurich.with_ymd_and_hms(2026, 9, 22, 18, 0, 0).unwrap(),
-            TournamentSelection::new(
-                TournamentType::RoundRobin,
-                TournamentType::SingleElimination,
-            ),
+            TournamentSelection::new(RoundRobin, SingleElimination::new(false)),
             vec![Weekday::Sat],
         );
 
         let json = serde_json::to_string(&season).expect("serialization should succeed");
-        let deserialized: Season =
+        let deserialized: Season<RoundRobin, SingleElimination> =
             serde_json::from_str(&json).expect("deserialization should succeed");
 
         assert_eq!(season.start_day(), deserialized.start_day());
@@ -130,10 +127,7 @@ mod tests {
         let season = Season::new(
             Zurich.with_ymd_and_hms(2026, 5, 13, 8, 45, 0).unwrap(),
             Zurich.with_ymd_and_hms(2026, 7, 1, 18, 0, 0).unwrap(),
-            TournamentSelection::new(
-                TournamentType::RoundRobin,
-                TournamentType::SingleElimination,
-            ),
+            TournamentSelection::new(RoundRobin, SingleElimination::new(false)),
             vec![Weekday::Sat],
         );
 
@@ -161,10 +155,7 @@ mod tests {
         let season = Season::new(
             Zurich.with_ymd_and_hms(2026, 5, 4, 8, 45, 0).unwrap(),
             Zurich.with_ymd_and_hms(2026, 5, 8, 18, 0, 0).unwrap(),
-            TournamentSelection::new(
-                TournamentType::RoundRobin,
-                TournamentType::SingleElimination,
-            ),
+            TournamentSelection::new(RoundRobin, SingleElimination::new(false)),
             vec![Weekday::Sat],
         );
 
