@@ -2,6 +2,7 @@ use chrono::NaiveDate;
 use rand::seq::SliceRandom;
 use serde::{Deserialize, Serialize};
 
+use crate::errors::AppError;
 use crate::traits::tournament::Tournament;
 use crate::types::game::Game;
 use crate::types::team::Team;
@@ -11,20 +12,17 @@ use crate::utils::game_day_scheduler::GameDayScheduler;
 pub struct RoundRobin;
 
 impl Tournament for RoundRobin {
+    fn name(&self) -> String {
+        "Round Robin".to_owned()
+    }
+
     fn validate_parameters(
         &self,
         teams: &[Team],
         game_days: &[NaiveDate],
         max_games_per_day: usize,
-    ) -> bool {
-        let mut inner_teams = teams.to_vec();
-        if !inner_teams.len().is_multiple_of(2) {
-            inner_teams.push(Team::new("Bye", None));
-        }
-        let number_teams = inner_teams.len();
-        let total_number_games = (number_teams * (number_teams - 1)) / 2;
-
-        total_number_games <= max_games_per_day * game_days.len()
+    ) -> Result<(), AppError> {
+        self.validate_tournament_duration(teams, game_days, max_games_per_day)
     }
 
     fn compute_schedule(
@@ -78,6 +76,30 @@ impl RoundRobin {
         resulting_teams[0] = teams[0].clone();
         resulting_teams[1] = teams[number_teams - 1].clone();
         resulting_teams
+    }
+
+    fn validate_tournament_duration(
+        &self,
+        teams: &[Team],
+        game_days: &[NaiveDate],
+        max_games_per_day: usize,
+    ) -> Result<(), AppError> {
+        let mut inner_teams = teams.to_vec();
+        if !inner_teams.len().is_multiple_of(2) {
+            inner_teams.push(Team::new("Bye", None));
+        }
+        let number_teams = inner_teams.len();
+        let total_number_games = (number_teams * (number_teams - 1)) / 2;
+
+        if total_number_games > max_games_per_day * game_days.len() {
+            return Err(AppError::TournamentTooShort(
+                self.name(),
+                max_games_per_day * game_days.len(),
+                total_number_games,
+            ));
+        }
+
+        Ok(())
     }
 }
 
@@ -134,7 +156,7 @@ mod tests {
             season.max_games_per_day(),
         );
 
-        assert!(result, "passed parameters are not valid");
+        assert!(result.is_ok(), "passed parameters are not valid");
     }
 
     #[test]
@@ -155,7 +177,7 @@ mod tests {
             season.max_games_per_day(),
         );
 
-        assert!(result, "passed parameters are not valid");
+        assert!(result.is_ok(), "passed parameters are not valid");
     }
 
     #[test]
@@ -219,7 +241,7 @@ mod tests {
             season.max_games_per_day(),
         );
 
-        assert!(result, "passed parameters are not valid");
+        assert!(result.is_ok(), "passed parameters are not valid");
     }
 
     #[test]

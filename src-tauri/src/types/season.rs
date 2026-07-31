@@ -73,18 +73,11 @@ where
 
     pub fn compute_season_schedule(&self, teams: &[Team]) -> Result<Vec<Game>, AppError> {
         let all_game_days = self.get_all_game_days();
-        if !self.tournament().group_stage().validate_parameters(
+        self.tournament().group_stage().validate_parameters(
             teams,
             &all_game_days,
             self.max_games_per_day(),
-        ) {
-            return Err(AppError::InvalidTournamentParameters(
-                "RoundRobin".to_owned(),
-                teams.to_vec(),
-                all_game_days,
-                self.max_games_per_day(),
-            ));
-        }
+        )?;
         let group_stage_schedule = self.tournament().group_stage().compute_schedule(
             teams,
             &all_game_days,
@@ -105,18 +98,12 @@ where
             .collect::<Vec<_>>();
         let playoff_teams = teams.iter().take(8).cloned().collect::<Vec<_>>();
 
-        if !self.tournament().playoff().validate_parameters(
+        self.tournament().playoff().validate_parameters(
             &playoff_teams,
             &playoff_game_days,
             self.max_games_per_day(),
-        ) {
-            return Err(AppError::InvalidTournamentParameters(
-                "SingleElimination".to_owned(),
-                playoff_teams,
-                playoff_game_days,
-                self.max_games_per_day(),
-            ));
-        }
+        )?;
+
         let playoff_schedule = self.tournament().playoff().compute_schedule(
             &playoff_teams,
             &playoff_game_days,

@@ -1,6 +1,7 @@
 use chrono::NaiveDate;
 use serde::{Deserialize, Serialize};
 
+use crate::errors::AppError;
 use crate::traits::tournament::Tournament;
 use crate::types::game::Game;
 use crate::types::team::Team;
@@ -13,18 +14,17 @@ pub struct SingleElimination {
 }
 
 impl Tournament for SingleElimination {
+    fn name(&self) -> String {
+        "Single Elimination".to_owned()
+    }
+
     fn validate_parameters(
         &self,
         teams: &[Team],
         game_days: &[NaiveDate],
         max_games_per_day: usize,
-    ) -> bool {
-        if teams.len() < 2 {
-            // 1 team is considered as invalid
-            return false;
-        }
-        let total_number_games = teams.len() - 1;
-        (game_days.len() * max_games_per_day) >= total_number_games
+    ) -> Result<(), AppError> {
+        self.validate_tournament_duration(teams, game_days, max_games_per_day)
     }
 
     fn compute_schedule(
@@ -140,6 +140,27 @@ impl SingleElimination {
     pub fn is_anonymous(&self) -> bool {
         self.anonymous
     }
+
+    fn validate_tournament_duration(
+        &self,
+        teams: &[Team],
+        game_days: &[NaiveDate],
+        max_games_per_day: usize,
+    ) -> Result<(), AppError> {
+        if teams.len() < 2 {
+            return Err(AppError::NotEnoughTeams(teams.len(), 2));
+        }
+        let total_number_games = teams.len() - 1;
+        if total_number_games > game_days.len() * max_games_per_day {
+            return Err(AppError::TournamentTooShort(
+                self.name(),
+                game_days.len() * max_games_per_day,
+                total_number_games,
+            ));
+        }
+
+        Ok(())
+    }
 }
 
 #[cfg(test)]
@@ -207,7 +228,7 @@ mod tests {
             season.max_games_per_day(),
         );
 
-        assert!(result, "passed parameters should be valid");
+        assert!(result.is_ok(), "passed parameters should be valid");
     }
 
     #[test]
@@ -228,7 +249,7 @@ mod tests {
             season.max_games_per_day(),
         );
 
-        assert!(result, "passed parameters should be valid");
+        assert!(result.is_ok(), "passed parameters should be valid");
     }
 
     #[test]
@@ -249,7 +270,7 @@ mod tests {
             season.max_games_per_day(),
         );
 
-        assert!(!result, "passed parameters should not be valid");
+        assert!(result.is_err(), "passed parameters should not be valid");
     }
 
     #[test]

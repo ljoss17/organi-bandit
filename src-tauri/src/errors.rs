@@ -1,12 +1,9 @@
-use chrono::NaiveDate;
 use chrono::ParseWeekdayError;
 use serde::{Serialize, Serializer};
 use serde_json::Error as SerdeError;
 use std::io::Error as IoError;
 
 use thiserror::Error;
-
-use crate::types::team::Team;
 
 #[derive(Debug, Error)]
 pub enum AppError {
@@ -18,8 +15,10 @@ pub enum AppError {
     WeekdayParseError(#[from] ParseWeekdayError),
     #[error("failed to find game")]
     MissingGame,
-    #[error("invalid '{0}' parameters. Teams {1:?}, game_days: {2:?}, max_games_per_day: {3}")]
-    InvalidTournamentParameters(String, Vec<Team>, Vec<NaiveDate>, usize),
+    #[error("not enough teams. Got {0}, require at leasts {1}")]
+    NotEnoughTeams(usize, usize),
+    #[error("{0} is too short. Game days {1}, required game days {2}")]
+    TournamentTooShort(String, usize, usize),
 }
 
 impl Serialize for AppError {
