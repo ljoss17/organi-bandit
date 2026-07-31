@@ -43,6 +43,9 @@ document.getElementById("generate-schedule").addEventListener("click", async () 
       gameDaysStr: gameDays,
     });
     console.log(schedule);
+    const result = await window.__TAURI__.core.invoke("generate_excel_schedule", {
+      schedule,
+    });
   } catch (error) {
     console.error(error);
   }

@@ -38,8 +38,20 @@ impl Tournament for SingleElimination {
         let number_of_byes = bracket_size - number_of_teams;
         let number_of_round = bracket_size.ilog(2);
 
-        let mut inner_teams = teams.to_vec();
-        inner_teams.sort_by_key(|team| team.get_seed());
+        let mut inner_teams = if self.anonymous {
+            (1..=number_of_teams)
+                .map(|value| {
+                    Team::new(
+                        &format!("{value}"),
+                        Some(number_of_teams as u32 - value as u32),
+                    )
+                })
+                .collect::<Vec<_>>()
+        } else {
+            let mut inner = teams.to_vec();
+            inner.sort_by_key(|team| team.get_seed());
+            inner
+        };
 
         let mut schedule = vec![];
         let mut game_day_scheduler = GameDayScheduler::new(game_days, max_games_per_day);
