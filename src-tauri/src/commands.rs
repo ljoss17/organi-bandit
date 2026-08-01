@@ -24,25 +24,31 @@ pub fn tauri_generate_schedule(
     let start_day_values = start_day_str.split("-").collect::<Vec<_>>();
     let start_day = Zurich
         .with_ymd_and_hms(
-            start_day_values[0].parse().unwrap(),
-            start_day_values[1].parse().unwrap(),
-            start_day_values[2].parse().unwrap(),
+            start_day_values[0].parse()?,
+            start_day_values[1].parse()?,
+            start_day_values[2].parse()?,
             0,
             0,
             0,
         )
-        .unwrap();
+        .single()
+        .ok_or(AppError::CreateDateTimeError(
+            start_day_values.into_iter().map(String::from).collect(),
+        ))?;
     let end_day_values = end_day_str.split("-").collect::<Vec<_>>();
     let end_day = Zurich
         .with_ymd_and_hms(
-            end_day_values[0].parse().unwrap(),
-            end_day_values[1].parse().unwrap(),
-            end_day_values[2].parse().unwrap(),
+            end_day_values[0].parse()?,
+            end_day_values[1].parse()?,
+            end_day_values[2].parse()?,
             0,
             0,
             0,
         )
-        .unwrap();
+        .single()
+        .ok_or(AppError::CreateDateTimeError(
+            end_day_values.into_iter().map(String::from).collect(),
+        ))?;
     let season = Season::new(
         start_day,
         end_day,
@@ -67,8 +73,8 @@ pub fn generate_excel_schedule(schedule: Vec<Game>) -> Result<(), AppError> {
     let mut current_games = 0;
 
     // Resize "VS" columns
-    worksheet.set_column_width(2, 4).unwrap();
-    worksheet.set_column_width(7, 4).unwrap();
+    worksheet.set_column_width(2, 4)?;
+    worksheet.set_column_width(7, 4)?;
 
     for game in schedule.iter() {
         let game_day = game.get_game_day();
@@ -77,7 +83,7 @@ pub fn generate_excel_schedule(schedule: Vec<Game>) -> Result<(), AppError> {
             write_day_row(worksheet, row, game_day)?;
             current_day = game_day;
             row += 1;
-            write_header_row(worksheet, row, 2).unwrap();
+            write_header_row(worksheet, row, 2)?;
             row += 1;
             current_games = 0;
         }
@@ -85,7 +91,7 @@ pub fn generate_excel_schedule(schedule: Vec<Game>) -> Result<(), AppError> {
             row += 1;
             current_games = 0;
         }
-        write_game_row(worksheet, game, row, current_games).unwrap();
+        write_game_row(worksheet, game, row, current_games)?;
         current_games += 1;
     }
     let current_date = chrono::Utc::now();
@@ -94,7 +100,7 @@ pub fn generate_excel_schedule(schedule: Vec<Game>) -> Result<(), AppError> {
     worksheet.autofit();
 
     // Save the file to disk.
-    workbook.save(format!("calendrier_{year}.xlsx")).unwrap();
+    workbook.save(format!("calendrier_{year}.xlsx"))?;
     Ok(())
 }
 
@@ -113,7 +119,7 @@ fn write_day_row(
     let day = game_day.day();
     let month = game_day.month();
     let year = game_day.year();
-    let month_str = chrono::Month::try_from(month as u8).unwrap();
+    let month_str = chrono::Month::try_from(month as u8)?;
 
     let title_format = Format::new()
         .set_align(FormatAlign::Center)
@@ -121,17 +127,15 @@ fn write_day_row(
         .set_border(FormatBorder::Thin)
         .set_background_color(Color::Red);
 
-    worksheet
-        .merge_range(
-            row,
-            0,
-            row,
-            9,
-            &format!("Day 1 - {day} {} {year}", month_str.name()),
-            &title_format,
-        )
-        .unwrap();
-    worksheet.set_row_height(row, 25).unwrap();
+    worksheet.merge_range(
+        row,
+        0,
+        row,
+        9,
+        &format!("Day 1 - {day} {} {year}", month_str.name()),
+        &title_format,
+    )?;
+    worksheet.set_row_height(row, 25)?;
     Ok(())
 }
 
@@ -146,23 +150,13 @@ fn write_header_row(
         .set_border(FormatBorder::Thin)
         .set_background_color(Color::Silver);
     for i in 0..max_games_per_day {
-        worksheet
-            .write_with_format(row, 5 * i, "Horaire", &format)
-            .unwrap();
-        worksheet
-            .write_with_format(row, 5 * i + 1, "Domicile", &format)
-            .unwrap();
-        worksheet
-            .write_with_format(row, 5 * i + 2, "VS", &format)
-            .unwrap();
-        worksheet
-            .write_with_format(row, 5 * i + 3, "Visiteur", &format)
-            .unwrap();
-        worksheet
-            .write_with_format(row, 5 * i + 4, "Arbitre", &format)
-            .unwrap();
+        worksheet.write_with_format(row, 5 * i, "Horaire", &format)?;
+        worksheet.write_with_format(row, 5 * i + 1, "Domicile", &format)?;
+        worksheet.write_with_format(row, 5 * i + 2, "VS", &format)?;
+        worksheet.write_with_format(row, 5 * i + 3, "Visiteur", &format)?;
+        worksheet.write_with_format(row, 5 * i + 4, "Arbitre", &format)?;
     }
-    worksheet.set_row_height(row, 18).unwrap();
+    worksheet.set_row_height(row, 18)?;
     Ok(())
 }
 
@@ -181,26 +175,20 @@ fn write_game_row(
         .set_align(FormatAlign::VerticalCenter)
         .set_border(FormatBorder::Thin)
         .set_background_color(Color::Silver);
-    worksheet
-        .write_with_format(
-            row,
-            1 + offset * 5,
-            game.get_home_team().get_name(),
-            &format_team,
-        )
-        .unwrap();
-    worksheet
-        .write_with_format(row, 2 + offset * 5, "VS", &format_vs)
-        .unwrap();
-    worksheet
-        .write_with_format(
-            row,
-            3 + offset * 5,
-            game.get_away_team().get_name(),
-            &format_team,
-        )
-        .unwrap();
+    worksheet.write_with_format(
+        row,
+        1 + offset * 5,
+        game.get_home_team().get_name(),
+        &format_team,
+    )?;
+    worksheet.write_with_format(row, 2 + offset * 5, "VS", &format_vs)?;
+    worksheet.write_with_format(
+        row,
+        3 + offset * 5,
+        game.get_away_team().get_name(),
+        &format_team,
+    )?;
 
-    worksheet.set_row_height(row, 18).unwrap();
+    worksheet.set_row_height(row, 18)?;
     Ok(())
 }

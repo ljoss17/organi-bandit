@@ -1,7 +1,9 @@
+use chrono::OutOfRange;
 use chrono::ParseWeekdayError;
+use rust_xlsxwriter::XlsxError;
 use serde::{Serialize, Serializer};
 use serde_json::Error as SerdeError;
-use std::io::Error as IoError;
+use std::{io::Error as IoError, num::ParseIntError};
 
 use thiserror::Error;
 
@@ -19,6 +21,14 @@ pub enum AppError {
     NotEnoughTeams(usize, usize),
     #[error("{0} is too short. Game days {1}, required game days {2}")]
     TournamentTooShort(String, usize, usize),
+    #[error("failed to parse string to integer")]
+    ParseDateError(#[from] ParseIntError),
+    #[error("failed to create date time from {0:?}")]
+    CreateDateTimeError(Vec<String>),
+    #[error("Xlsx error")]
+    XlsxError(#[from] XlsxError),
+    #[error("Date out of range")]
+    DateOutOfRange(#[from] OutOfRange),
 }
 
 impl Serialize for AppError {
