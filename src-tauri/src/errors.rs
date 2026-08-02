@@ -3,6 +3,7 @@ use chrono::ParseWeekdayError;
 use rust_xlsxwriter::XlsxError;
 use serde::{Serialize, Serializer};
 use serde_json::Error as SerdeError;
+use std::num::TryFromIntError;
 use std::{io::Error as IoError, num::ParseIntError};
 
 use thiserror::Error;
@@ -31,6 +32,8 @@ pub enum AppError {
     DateOutOfRange(#[from] OutOfRange),
     #[error("invalid time. Hour {0}, minute {0}")]
     InvalidTime(u8, u8),
+    #[error("error parsing integer value")]
+    ParseIntError(#[from] TryFromIntError),
 }
 
 impl Serialize for AppError {

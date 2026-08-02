@@ -34,9 +34,16 @@
         </div>
 
         <div class="field">
-          <label for="max-games-per-day">Max games per day</label>
-          <input type="number" id="max-games-per-day" name="max-games-per-day" min="1" step="1" value="1" />
+          <label for="number-fields">Number of fields</label>
+          <input type="number" id="number-fields" name="number-fields" min="1" step="1" value="1" />
         </div>
+
+        <div class="field">
+          <label for="number-time-slots">Number of time slots</label>
+          <input type="number" id="number-time-slots" name="number-time-slots" min="1" step="1" value="1" />
+        </div>
+
+        <div id="time-slots" class="time-slots"></div>
 
         <fieldset class="game-days">
           <legend>Game days</legend>

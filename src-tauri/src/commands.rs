@@ -64,36 +64,48 @@ pub fn tauri_generate_schedule(
 }
 
 #[tauri::command]
-pub fn generate_excel_schedule(schedule: Vec<Game>) -> Result<(), AppError> {
+pub fn generate_excel_schedule(schedule: Vec<Game>, number_fields: u16) -> Result<(), AppError> {
     // Create a new Excel file object.
     let mut workbook = Workbook::new();
 
     // Add a worksheet to the workbook.
     let worksheet = workbook.add_worksheet();
 
+    let mut sorted_schedule = schedule.clone();
+    sorted_schedule.sort_by_key(|game| *game.get_game_day());
+
     let mut row = 0;
-    let mut current_day = schedule[schedule.len() - 1].get_game_day();
+    let mut current_day = sorted_schedule[sorted_schedule.len() - 1]
+        .get_game_day()
+        .date_naive();
+    let mut current_time = None;
     let mut current_games = 0;
 
     // Resize "VS" columns
     worksheet.set_column_width(2, 4)?;
     worksheet.set_column_width(7, 4)?;
 
-    for game in schedule.iter() {
+    for game in sorted_schedule.iter() {
         let game_day = game.get_game_day();
-        if game_day != current_day {
+        if game_day.date_naive() != current_day {
             row += 2;
             write_day_row(worksheet, row, game_day)?;
-            current_day = game_day;
+            current_day = game_day.date_naive();
             row += 1;
             write_header_row(worksheet, row, 2)?;
             row += 1;
             current_games = 0;
-        }
-        if current_games == 2 {
+        } else if current_time != Some(game_day.time()) {
             row += 1;
             current_games = 0;
         }
+        current_time = Some(game_day.time());
+
+        if game.get_home_team().get_name() == "Bye" || game.get_away_team().get_name() == "Bye" {
+            write_bye_game(worksheet, game, row, number_fields)?;
+            continue;
+        }
+
         write_game_row(worksheet, game, row, current_games)?;
         current_games += 1;
     }
@@ -134,7 +146,7 @@ fn write_day_row(
         row,
         0,
         row,
-        9,
+        10,
         &format!("Day 1 - {day} {} {year}", month_str.name()),
         &title_format,
     )?;
@@ -145,20 +157,21 @@ fn write_day_row(
 fn write_header_row(
     worksheet: &mut Worksheet,
     row: u32,
-    max_games_per_day: u16,
+    number_fields: u16,
 ) -> Result<(), AppError> {
     let format = Format::new()
         .set_align(FormatAlign::Center)
         .set_align(FormatAlign::VerticalCenter)
         .set_border(FormatBorder::Thin)
         .set_background_color(Color::Silver);
-    for i in 0..max_games_per_day {
+    for i in 0..number_fields {
         worksheet.write_with_format(row, 5 * i, "Horaire", &format)?;
         worksheet.write_with_format(row, 5 * i + 1, "Domicile", &format)?;
         worksheet.write_with_format(row, 5 * i + 2, "VS", &format)?;
         worksheet.write_with_format(row, 5 * i + 3, "Visiteur", &format)?;
         worksheet.write_with_format(row, 5 * i + 4, "Arbitre", &format)?;
     }
+    worksheet.write_with_format(row, number_fields * 5, "Bye", &format)?;
     worksheet.set_row_height(row, 18)?;
     Ok(())
 }
@@ -178,6 +191,13 @@ fn write_game_row(
         .set_align(FormatAlign::VerticalCenter)
         .set_border(FormatBorder::Thin)
         .set_background_color(Color::Silver);
+
+    worksheet.write_with_format(
+        row,
+        offset * 5,
+        game.get_game_time()?.to_string(),
+        &format_team,
+    )?;
     worksheet.write_with_format(
         row,
         1 + offset * 5,
@@ -193,5 +213,27 @@ fn write_game_row(
     )?;
 
     worksheet.set_row_height(row, 18)?;
+    Ok(())
+}
+
+fn write_bye_game(
+    worksheet: &mut Worksheet,
+    game: &Game,
+    row: u32,
+    number_fields: u16,
+) -> Result<(), AppError> {
+    let format_bye = Format::new()
+        .set_align(FormatAlign::Center)
+        .set_align(FormatAlign::VerticalCenter)
+        .set_border(FormatBorder::Thin)
+        .set_background_color(Color::Silver);
+
+    let bye_team = if game.get_home_team().get_name() != "Bye" {
+        game.get_home_team().get_name()
+    } else {
+        game.get_away_team().get_name()
+    };
+
+    worksheet.write_with_format(row, number_fields * 5, bye_team, &format_bye)?;
     Ok(())
 }

@@ -30,11 +30,12 @@ where
     pub fn new(
         start_day: DateTime<Tz>,
         end_day: DateTime<Tz>,
-        game_times: Vec<GameTime>,
+        mut game_times: Vec<GameTime>,
         number_fields: usize,
         tournament: TournamentSelection<G, P>,
         game_days: Vec<Weekday>,
     ) -> Self {
+        game_times.sort();
         Self {
             start_day,
             end_day,

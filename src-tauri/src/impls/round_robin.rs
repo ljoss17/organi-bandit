@@ -48,18 +48,25 @@ impl Tournament for RoundRobin {
         let mut game_time_index = 0;
 
         for _ in 0..number_teams - 1 {
+            let round_day = *game_day_scheduler.current_day();
             for i in 0..(number_teams / 2) {
                 let game_time = game_times[game_time_index].clone();
                 let home_team = inner_teams[i].clone();
                 let away_team = inner_teams[number_teams - 1 - i].clone();
+                let is_bye = home_team.get_name() == "Bye" || away_team.get_name() == "Bye";
+                let game_day = if is_bye {
+                    round_day
+                } else {
+                    *game_day_scheduler.current_day()
+                };
                 let game = Game::new_with_game_day(
                     home_team.clone(),
                     away_team.clone(),
-                    *game_day_scheduler.current_day(),
+                    game_day,
                     game_time,
                 );
                 schedule.push(game);
-                if home_team.get_name() != "Bye" && away_team.get_name() != "Bye" {
+                if !is_bye {
                     game_day_scheduler.try_advance();
                     game_time_index = (game_time_index + 1) % game_times.len();
                 }
@@ -191,6 +198,39 @@ mod tests {
     }
 
     #[test]
+    fn test_validate_real_scenario_parameters() {
+        let teams = [
+            Team::new("Riviera Saints", None),
+            Team::new("Fribourg Cardinals", None),
+            Team::new("Suzerains", None),
+            Team::new("Geneva Whoppers", None),
+            Team::new("Lausanne Owls", None),
+            Team::new("Monthey Rhinos", None),
+            Team::new("Morges Bandits", None),
+            Team::new("Yverdon Ducs", None),
+            Team::new("Lausanne Rockets", None),
+        ];
+        let season = Season::new(
+            start_day(),
+            end_day_1(),
+            vec![GameTime::new(9, 0).unwrap(), GameTime::new(14, 0).unwrap()],
+            2,
+            TournamentSelection::new(RoundRobin, SingleElimination::new(false)),
+            vec![Weekday::Sat],
+        );
+
+        let round_robin = RoundRobin;
+
+        let result = round_robin.validate_parameters(
+            &teams,
+            &season.get_all_game_days(),
+            season.max_games_per_day(),
+        );
+
+        assert!(result.is_ok(), "passed parameters are not valid");
+    }
+
+    #[test]
     fn test_round_robin_schedule_1() {
         // Total number of games is computed using:
         // N * (N - 1) / 2
@@ -227,38 +267,6 @@ mod tests {
     }
 
     #[test]
-    fn test_a() {
-        let teams = [
-            Team::new("Fribourg Cardinals", None),
-            Team::new("Suzerains", None),
-            Team::new("Geneva Whoppers", None),
-            Team::new("Lausanne Owls", None),
-            Team::new("Monthey Rhinos", None),
-            Team::new("Morges Bandits", None),
-            Team::new("Yverdon Ducs", None),
-            Team::new("Lausanne Rockets", None),
-        ];
-        let season = Season::new(
-            start_day(),
-            end_day_1(),
-            vec![GameTime::new(9, 0).unwrap(), GameTime::new(14, 0).unwrap()],
-            2,
-            TournamentSelection::new(RoundRobin, SingleElimination::new(false)),
-            vec![Weekday::Sat],
-        );
-
-        let round_robin = RoundRobin;
-
-        let result = round_robin.validate_parameters(
-            &teams,
-            &season.get_all_game_days(),
-            season.max_games_per_day(),
-        );
-
-        assert!(result.is_ok(), "passed parameters are not valid");
-    }
-
-    #[test]
     fn test_round_robin_schedule_2() {
         // Total number of games is computed using:
         // N * (N - 1) / 2
@@ -288,6 +296,46 @@ mod tests {
         assert_schedule(
             &result,
             &teams(),
+            season.get_all_game_days(),
+            season.game_times(),
+            season.number_fields(),
+        );
+    }
+
+    #[test]
+    fn test_real_scenario() {
+        let teams = [
+            Team::new("Riviera Saints", None),
+            Team::new("Fribourg Cardinals", None),
+            Team::new("Suzerains", None),
+            Team::new("Geneva Whoppers", None),
+            Team::new("Lausanne Owls", None),
+            Team::new("Monthey Rhinos", None),
+            Team::new("Morges Bandits", None),
+            Team::new("Yverdon Ducs", None),
+            Team::new("Lausanne Rockets", None),
+        ];
+        let season = Season::new(
+            start_day(),
+            end_day_1(),
+            vec![GameTime::new(9, 0).unwrap(), GameTime::new(14, 0).unwrap()],
+            2,
+            TournamentSelection::new(RoundRobin, SingleElimination::new(false)),
+            vec![Weekday::Sat],
+        );
+
+        let round_robin = RoundRobin;
+
+        let result = round_robin.compute_schedule(
+            &teams,
+            &season.get_all_game_days(),
+            &[GameTime::new(9, 0).unwrap(), GameTime::new(14, 0).unwrap()],
+            2,
+        );
+
+        assert_schedule(
+            &result,
+            &teams,
             season.get_all_game_days(),
             season.game_times(),
             season.number_fields(),
@@ -332,6 +380,8 @@ mod tests {
 
         let mut bye_weeks = HashMap::new();
         let mut computed_game_days = HashMap::new();
+        let mut team_real_game_days: HashMap<&str, HashSet<NaiveDate>> = HashMap::new();
+        let mut team_bye_days: HashMap<&str, NaiveDate> = HashMap::new();
 
         for game in schedule.iter() {
             let home_team = game.get_home_team();
@@ -349,6 +399,14 @@ mod tests {
                         computed_game_days.insert(game_day, 1);
                     }
                 }
+                team_real_game_days
+                    .entry(home_team.get_name())
+                    .or_default()
+                    .insert(game_day.date_naive());
+                team_real_game_days
+                    .entry(away_team.get_name())
+                    .or_default()
+                    .insert(game_day.date_naive());
             }
 
             if home_team.get_name() == "Bye" {
@@ -356,6 +414,7 @@ mod tests {
                     Some(count) => bye_weeks.insert(away_team.get_name(), count + 1),
                     None => bye_weeks.insert(away_team.get_name(), 1),
                 };
+                team_bye_days.insert(away_team.get_name(), game_day.date_naive());
             }
 
             if away_team.get_name() == "Bye" {
@@ -363,6 +422,7 @@ mod tests {
                     Some(count) => bye_weeks.insert(home_team.get_name(), count + 1),
                     None => bye_weeks.insert(home_team.get_name(), 1),
                 };
+                team_bye_days.insert(home_team.get_name(), game_day.date_naive());
             }
         }
 
@@ -371,6 +431,14 @@ mod tests {
             bye_weeks.values().all(|&value| value == 1),
             "All teams should only have 1 bye week"
         );
+        for (team, bye_day) in team_bye_days.iter() {
+            assert!(
+                !team_real_game_days
+                    .get(team)
+                    .is_some_and(|days| days.contains(bye_day)),
+                "team {team} has a real game scheduled on its bye day {bye_day}"
+            );
+        }
         assert!(
             computed_game_days
                 .keys()

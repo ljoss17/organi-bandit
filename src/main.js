@@ -20,31 +20,71 @@ async function loadTeams() {
 
 loadTeams();
 
+function renderTimeSlots(count) {
+  const container = document.getElementById("time-slots");
+
+  while (container.children.length > count) {
+    container.removeChild(container.lastElementChild);
+  }
+
+  while (container.children.length < count) {
+    const index = container.children.length;
+
+    const row = document.createElement("div");
+    row.className = "field";
+
+    const label = document.createElement("label");
+    label.textContent = `Time slot ${index + 1}`;
+
+    const input = document.createElement("input");
+    input.type = "time";
+    input.className = "time-slot-input";
+
+    row.appendChild(label);
+    row.appendChild(input);
+    container.appendChild(row);
+  }
+}
+
+const numberTimeSlotsInput = document.getElementById("number-time-slots");
+numberTimeSlotsInput.addEventListener("input", () => {
+  const count = Math.max(1, Number(numberTimeSlotsInput.value) || 1);
+  renderTimeSlots(count);
+});
+
+renderTimeSlots(Number(numberTimeSlotsInput.value));
+
 function collectSeasonInput() {
   const startDate = document.getElementById("start-date").value;
   const endDate = document.getElementById("end-date").value;
-  const maxGamesPerDay = Number(document.getElementById("max-games-per-day").value);
+  const numberFields = Number(document.getElementById("number-fields").value);
+  const gameTimes = Array.from(document.querySelectorAll(".time-slot-input")).map((input) => {
+    const [hour, minute] = input.value.split(":").map(Number);
+    return { hour, minute };
+  });
   const gameDays = Array.from(document.querySelectorAll('input[name="game-days"]:checked')).map(
     (checkbox) => checkbox.value,
   );
 
-  return { startDate, endDate, maxGamesPerDay, gameDays, teams };
+  return { startDate, endDate, numberFields, gameTimes, gameDays, teams };
 }
 
 document.getElementById("generate-schedule").addEventListener("click", async () => {
-  const { startDate, endDate, maxGamesPerDay, gameDays, teams } = collectSeasonInput();
+  const { startDate, endDate, numberFields, gameTimes, gameDays, teams } = collectSeasonInput();
 
   try {
     const schedule = await window.__TAURI__.core.invoke("tauri_generate_schedule", {
       teams,
       startDayStr: startDate,
       endDayStr: endDate,
-      maxGamesPerDay,
+      gameTimes,
+      numberFields,
       gameDaysStr: gameDays,
     });
     console.log(schedule);
     const result = await window.__TAURI__.core.invoke("generate_excel_schedule", {
       schedule,
+      numberFields,
     });
   } catch (error) {
     console.error(error);

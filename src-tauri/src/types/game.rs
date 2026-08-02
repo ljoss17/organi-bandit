@@ -1,8 +1,9 @@
-use chrono::{DateTime, Datelike, NaiveDate, TimeZone};
+use chrono::{DateTime, Datelike, NaiveDate, TimeZone, Timelike};
 use chrono_tz::Europe::Zurich;
 use chrono_tz::Tz;
 use serde::{Deserialize, Serialize};
 
+use crate::errors::AppError;
 use crate::types::game_time::GameTime;
 use crate::types::team::Team;
 use crate::utils::serde_datetime;
@@ -71,6 +72,12 @@ impl Game {
 
     pub fn get_game_day(&self) -> &DateTime<Tz> {
         &self.game_day
+    }
+
+    pub fn get_game_time(&self) -> Result<GameTime, AppError> {
+        let hour = self.game_day.hour().try_into()?;
+        let minute = self.game_day.minute().try_into()?;
+        GameTime::new(hour, minute)
     }
 }
 
