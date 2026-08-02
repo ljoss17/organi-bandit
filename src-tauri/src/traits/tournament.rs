@@ -2,6 +2,7 @@ use chrono::NaiveDate;
 
 use crate::errors::AppError;
 use crate::types::game::Game;
+use crate::types::game_time::GameTime;
 use crate::types::team::Team;
 
 pub trait Tournament {
@@ -18,6 +19,7 @@ pub trait Tournament {
         &self,
         teams: &[Team],
         game_days: &[NaiveDate],
-        max_games_per_day: usize,
+        game_times: &[GameTime],
+        number_fields: usize,
     ) -> Vec<Game>;
 }

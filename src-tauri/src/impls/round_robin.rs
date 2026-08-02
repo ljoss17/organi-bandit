@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 use crate::errors::AppError;
 use crate::traits::tournament::Tournament;
 use crate::types::game::Game;
+use crate::types::game_time::GameTime;
 use crate::types::team::Team;
 use crate::utils::game_day_scheduler::GameDayScheduler;
 
@@ -29,7 +30,8 @@ impl Tournament for RoundRobin {
         &self,
         teams: &[Team],
         game_days: &[NaiveDate],
-        max_games_per_day: usize,
+        game_times: &[GameTime],
+        number_fields: usize,
     ) -> Vec<Game> {
         let mut rng = rand::rng();
         let mut inner_teams = teams.to_vec();
@@ -41,20 +43,25 @@ impl Tournament for RoundRobin {
 
         let mut schedule = vec![];
 
-        let mut game_day_scheduler = GameDayScheduler::new(game_days, max_games_per_day);
+        let mut game_day_scheduler =
+            GameDayScheduler::new(game_days, game_times.len() * number_fields);
+        let mut game_time_index = 0;
 
         for _ in 0..number_teams - 1 {
             for i in 0..(number_teams / 2) {
+                let game_time = game_times[game_time_index].clone();
                 let home_team = inner_teams[i].clone();
                 let away_team = inner_teams[number_teams - 1 - i].clone();
                 let game = Game::new_with_game_day(
                     home_team.clone(),
                     away_team.clone(),
                     *game_day_scheduler.current_day(),
+                    game_time,
                 );
                 schedule.push(game);
                 if home_team.get_name() != "Bye" && away_team.get_name() != "Bye" {
                     game_day_scheduler.try_advance();
+                    game_time_index = (game_time_index + 1) % game_times.len();
                 }
             }
             inner_teams = Self::rotate_teams(inner_teams);
@@ -108,7 +115,7 @@ mod tests {
     use std::collections::{HashMap, HashSet};
 
     use super::*;
-    use chrono::{DateTime, TimeZone, Weekday};
+    use chrono::{DateTime, Datelike, NaiveDate, TimeZone, Weekday};
     use chrono_tz::Europe::Zurich;
     use chrono_tz::Tz;
 
@@ -204,7 +211,8 @@ mod tests {
         let result = round_robin.compute_schedule(
             &teams(),
             &season.get_all_game_days(),
-            season.max_games_per_day(),
+            season.game_times(),
+            season.number_fields(),
         );
 
         assert_eq!(result.len(), expecte_total_number_games);
@@ -213,7 +221,8 @@ mod tests {
             &result,
             &teams(),
             season.get_all_game_days(),
-            season.max_games_per_day(),
+            season.game_times(),
+            season.number_fields(),
         );
     }
 
@@ -270,7 +279,8 @@ mod tests {
         let result = round_robin.compute_schedule(
             &teams(),
             &season.get_all_game_days(),
-            season.max_games_per_day(),
+            season.game_times(),
+            season.number_fields(),
         );
 
         assert_eq!(result.len(), expecte_total_number_games);
@@ -279,7 +289,8 @@ mod tests {
             &result,
             &teams(),
             season.get_all_game_days(),
-            season.max_games_per_day(),
+            season.game_times(),
+            season.number_fields(),
         );
     }
 
@@ -287,8 +298,26 @@ mod tests {
         schedule: &[Game],
         teams: &[Team],
         game_days: Vec<NaiveDate>,
-        max_games_per_day: usize,
+        game_times: &[GameTime],
+        number_fields: usize,
     ) {
+        let mut inner_game_days = vec![];
+        for game_time in game_times.iter() {
+            for day in game_days.iter() {
+                let game_day = Zurich
+                    .with_ymd_and_hms(
+                        day.year(),
+                        day.month(),
+                        day.day(),
+                        game_time.hour().into(),
+                        game_time.minute().into(),
+                        0,
+                    )
+                    .single()
+                    .expect("Game day should be an exact date and time");
+                inner_game_days.push(game_day);
+            }
+        }
         let all_unique_teams = HashSet::<String>::from_iter(
             teams
                 .iter()
@@ -345,14 +374,15 @@ mod tests {
         assert!(
             computed_game_days
                 .keys()
-                .all(|day| game_days.contains(&day.date_naive())),
+                .all(|day| inner_game_days.contains(day)),
             "Scheduled games should all be in passed game days"
         );
         assert!(
             computed_game_days
                 .values()
-                .all(|&value| value <= max_games_per_day),
-            "All game days should have a maximum of '{max_games_per_day}' games"
+                .all(|&value| value <= number_fields),
+            "All game days should have a maximum of '{}' games per date/time",
+            number_fields
         );
     }
 }

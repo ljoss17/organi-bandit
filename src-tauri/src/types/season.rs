@@ -53,6 +53,14 @@ where
         &self.end_day
     }
 
+    pub fn game_times(&self) -> &Vec<GameTime> {
+        &self.game_times
+    }
+
+    pub fn number_fields(&self) -> usize {
+        self.number_fields
+    }
+
     pub fn max_games_per_day(&self) -> usize {
         self.number_fields * self.game_times.len()
     }
@@ -85,7 +93,8 @@ where
         let group_stage_schedule = self.tournament().group_stage().compute_schedule(
             teams,
             &all_game_days,
-            self.max_games_per_day(),
+            self.game_times(),
+            self.number_fields(),
         );
         let last_group_stage_day = group_stage_schedule
             .iter()
@@ -111,7 +120,8 @@ where
         let playoff_schedule = self.tournament().playoff().compute_schedule(
             &playoff_teams,
             &playoff_game_days,
-            self.max_games_per_day(),
+            self.game_times(),
+            self.number_fields(),
         );
         Ok([&group_stage_schedule[..], &playoff_schedule[..]].concat())
     }

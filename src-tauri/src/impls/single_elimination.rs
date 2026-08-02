@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 use crate::errors::AppError;
 use crate::traits::tournament::Tournament;
 use crate::types::game::Game;
+use crate::types::game_time::GameTime;
 use crate::types::team::Team;
 use crate::utils::game_day_scheduler::GameDayScheduler;
 
@@ -31,7 +32,8 @@ impl Tournament for SingleElimination {
         &self,
         teams: &[Team],
         game_days: &[NaiveDate],
-        max_games_per_day: usize,
+        game_times: &[GameTime],
+        number_fields: usize,
     ) -> Vec<Game> {
         let number_of_teams = teams.len();
         let bracket_size = number_of_teams.next_power_of_two();
@@ -54,7 +56,8 @@ impl Tournament for SingleElimination {
         };
 
         let mut schedule = vec![];
-        let mut game_day_scheduler = GameDayScheduler::new(game_days, max_games_per_day);
+        let mut game_day_scheduler =
+            GameDayScheduler::new(game_days, game_times.len() * number_fields);
 
         for i in 0..number_of_byes {
             let home_team = inner_teams[i].clone();
@@ -64,45 +67,68 @@ impl Tournament for SingleElimination {
                 home_team,
                 bye_team.clone(),
                 *game_day_scheduler.current_day(),
+                GameTime::new(0, 0).unwrap(),
             );
 
             schedule.push(game);
             inner_teams.push(bye_team);
         }
 
+        let mut game_time_index = 0;
+
         // Compute the first round of single elimination, giving higher seed teams a bye week
         for offset in 0..(number_of_teams - number_of_byes) / 2 {
             let home_team = inner_teams[number_of_byes + offset].clone();
             let away_team = inner_teams[number_of_teams - 1 - offset].clone();
-            let game =
-                Game::new_with_game_day(home_team, away_team, *game_day_scheduler.current_day());
+            let game_time = game_times[game_time_index].clone();
+            let game = Game::new_with_game_day(
+                home_team,
+                away_team,
+                *game_day_scheduler.current_day(),
+                game_time,
+            );
             schedule.push(game);
 
             game_day_scheduler.try_advance();
+            game_time_index = (game_time_index + 1) % game_times.len();
         }
 
         game_day_scheduler.try_force_advance();
 
         let mut second_round_schedule = vec![];
         let second_round_byes = number_of_byes / 2;
+        game_time_index = 0;
         // Compute the second round of single elimination, taking into account first round bye weeks
         for offset in 0..second_round_byes {
             let home_team = inner_teams[second_round_byes + offset].clone();
             let away_team = inner_teams[number_of_teams - 3 - offset].clone();
-            let game =
-                Game::new_with_game_day(home_team, away_team, *game_day_scheduler.current_day());
+            let game_time = game_times[game_time_index].clone();
+            let game = Game::new_with_game_day(
+                home_team,
+                away_team,
+                *game_day_scheduler.current_day(),
+                game_time,
+            );
             second_round_schedule.push(game);
+            game_time_index = (game_time_index + 1) % game_times.len();
 
             game_day_scheduler.try_advance();
         }
         let remaining_second_round_slots = bracket_size / 4 - second_round_schedule.len();
 
+        game_time_index = 0;
         for team in inner_teams.iter().take(remaining_second_round_slots) {
             let home_team = team.clone();
             let away_team = Team::new("WinnerPrevious", None);
-            let game =
-                Game::new_with_game_day(home_team, away_team, *game_day_scheduler.current_day());
+            let game_time = game_times[game_time_index].clone();
+            let game = Game::new_with_game_day(
+                home_team,
+                away_team,
+                *game_day_scheduler.current_day(),
+                game_time,
+            );
             second_round_schedule.push(game);
+            game_time_index = (game_time_index + 1) % game_times.len();
 
             game_day_scheduler.try_advance();
         }
@@ -111,18 +137,22 @@ impl Tournament for SingleElimination {
 
         game_day_scheduler.try_force_advance();
 
+        game_time_index = 0;
         // Compute all remaining rounds as there is no side effect from bye weeks
         for round in 3..=number_of_round {
             let number_of_games = bracket_size / 2usize.pow(round);
             for _ in 0..number_of_games {
+                let game_time = game_times[game_time_index].clone();
                 let home_team = Team::new("WinnerA", None);
                 let away_team = Team::new("WinnerB", None);
                 let game = Game::new_with_game_day(
                     home_team,
                     away_team,
                     *game_day_scheduler.current_day(),
+                    game_time,
                 );
                 schedule.push(game);
+                game_time_index = (game_time_index + 1) % game_times.len();
 
                 game_day_scheduler.try_advance();
             }
@@ -293,7 +323,8 @@ mod tests {
         let schedule = single_elimination.compute_schedule(
             &teams(),
             &season.get_all_game_days(),
-            season.max_games_per_day(),
+            season.game_times(),
+            season.number_fields(),
         );
 
         assert_schedule(&schedule, &teams(), season.get_all_game_days(), 2)
@@ -315,7 +346,8 @@ mod tests {
         let schedule = single_elimination.compute_schedule(
             &teams_bigger(),
             &season.get_all_game_days(),
-            season.max_games_per_day(),
+            season.game_times(),
+            season.number_fields(),
         );
 
         assert_schedule(
@@ -355,6 +387,11 @@ mod tests {
         let mut round = 1;
         for game in schedule.iter() {
             assert_eq!(game.get_game_day().date_naive(), current_game_day);
+            assert_ne!(
+                game.get_home_team(),
+                game.get_away_team(),
+                "home and away team should be different"
+            );
             games_per_round += 1;
             if game.get_home_team().get_name() != "Bye" && game.get_away_team().get_name() != "Bye"
             {

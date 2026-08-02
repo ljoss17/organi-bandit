@@ -6,7 +6,7 @@ use serde::Serialize;
 
 use crate::errors::AppError;
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct GameTime {
     hour: u8,
     minute: u8,

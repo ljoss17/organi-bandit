@@ -3,6 +3,7 @@ use chrono_tz::Europe::Zurich;
 use chrono_tz::Tz;
 use serde::{Deserialize, Serialize};
 
+use crate::types::game_time::GameTime;
 use crate::types::team::Team;
 use crate::utils::serde_datetime;
 
@@ -36,14 +37,19 @@ impl Game {
         }
     }
 
-    pub fn new_with_game_day(home_team: Team, away_team: Team, naive_game_day: NaiveDate) -> Self {
+    pub fn new_with_game_day(
+        home_team: Team,
+        away_team: Team,
+        naive_game_day: NaiveDate,
+        game_time: GameTime,
+    ) -> Self {
         let game_day = Zurich
             .with_ymd_and_hms(
                 naive_game_day.year(),
                 naive_game_day.month(),
                 naive_game_day.day(),
-                0,
-                0,
+                game_time.hour().into(),
+                game_time.minute().into(),
                 0,
             )
             .single()
