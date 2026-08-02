@@ -21,5 +21,6 @@ pub trait Tournament {
         game_days: &[NaiveDate],
         game_times: &[GameTime],
         number_fields: usize,
-    ) -> Vec<Game>;
+        with_referees: bool,
+    ) -> Result<Vec<Game>, AppError>;
 }

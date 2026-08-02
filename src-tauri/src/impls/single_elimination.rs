@@ -34,7 +34,8 @@ impl Tournament for SingleElimination {
         game_days: &[NaiveDate],
         game_times: &[GameTime],
         number_fields: usize,
-    ) -> Vec<Game> {
+        _with_referees: bool,
+    ) -> Result<Vec<Game>, AppError> {
         let number_of_teams = teams.len();
         let bracket_size = number_of_teams.next_power_of_two();
         let number_of_byes = bracket_size - number_of_teams;
@@ -163,7 +164,7 @@ impl Tournament for SingleElimination {
             }
         }
 
-        schedule
+        Ok(schedule)
     }
 }
 
@@ -325,12 +326,17 @@ mod tests {
 
         let single_elimination = SingleElimination::new(false);
 
-        let schedule = single_elimination.compute_schedule(
+        let maybe_schedule = single_elimination.compute_schedule(
             &teams(),
             &season.get_all_game_days(),
             season.game_times(),
             season.number_fields(),
+            true,
         );
+
+        assert!(maybe_schedule.is_ok());
+
+        let schedule = maybe_schedule.unwrap();
 
         assert_schedule(&schedule, &teams(), season.get_all_game_days(), 2)
     }
@@ -348,12 +354,17 @@ mod tests {
 
         let single_elimination = SingleElimination::new(false);
 
-        let schedule = single_elimination.compute_schedule(
+        let maybe_schedule = single_elimination.compute_schedule(
             &teams_bigger(),
             &season.get_all_game_days(),
             season.game_times(),
             season.number_fields(),
+            true,
         );
+
+        assert!(maybe_schedule.is_ok());
+
+        let schedule = maybe_schedule.unwrap();
 
         assert_schedule(
             &schedule,

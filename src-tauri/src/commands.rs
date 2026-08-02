@@ -211,6 +211,9 @@ fn write_game_row(
         game.get_away_team().get_name(),
         &format_team,
     )?;
+    if let Some(referee) = game.get_referee() {
+        worksheet.write_with_format(row, 4 + offset * 5, referee.get_name(), &format_team)?;
+    }
 
     worksheet.set_row_height(row, 18)?;
     Ok(())

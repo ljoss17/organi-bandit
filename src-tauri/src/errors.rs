@@ -34,6 +34,8 @@ pub enum AppError {
     InvalidTime(u8, u8),
     #[error("error parsing integer value")]
     ParseIntError(#[from] TryFromIntError),
+    #[error("no eligible teams to referee")]
+    EmptyEligibleReferees,
 }
 
 impl Serialize for AppError {

@@ -61,6 +61,10 @@ impl Game {
         let minute = self.game_day.minute().try_into()?;
         GameTime::new(hour, minute)
     }
+
+    pub fn get_referee(&self) -> &Option<Team> {
+        &self.referee
+    }
 }
 
 #[cfg(test)]
