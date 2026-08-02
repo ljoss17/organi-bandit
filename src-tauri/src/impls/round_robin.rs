@@ -64,6 +64,7 @@ impl Tournament for RoundRobin {
                     away_team.clone(),
                     game_day,
                     game_time,
+                    None,
                 );
                 schedule.push(game);
                 if !is_bye {

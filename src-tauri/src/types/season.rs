@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use chrono::{DateTime, Datelike, NaiveDate, TimeDelta, Weekday};
 use chrono_tz::Tz;
 use serde::{Deserialize, Serialize};
@@ -124,7 +126,62 @@ where
             self.game_times(),
             self.number_fields(),
         );
-        Ok([&group_stage_schedule[..], &playoff_schedule[..]].concat())
+        self.add_referees(
+            [&group_stage_schedule[..], &playoff_schedule[..]].concat(),
+            teams,
+        )
+    }
+
+    fn add_referees(&self, schedule: Vec<Game>, teams: &[Team]) -> Result<Vec<Game>, AppError> {
+        let mut schedule_with_referee = vec![];
+        let mut referee_count = HashMap::new();
+        for team in teams.iter() {
+            referee_count.insert(team, 0);
+        }
+        let mut busy_teams_set: HashMap<&DateTime<Tz>, Vec<&Team>> = HashMap::new();
+        for game in schedule.iter() {
+            let game_day = game.get_game_day();
+            busy_teams_set
+                .entry(game_day)
+                .or_default()
+                .extend([game.get_home_team(), game.get_away_team()]);
+        }
+
+        let mut referees_this_day = vec![];
+
+        for game in schedule.iter() {
+            if game.get_home_team().get_name() == "Bye" || game.get_away_team().get_name() == "Bye"
+            {
+                continue;
+            }
+            let busy_teams = busy_teams_set.get(game.get_game_day()).unwrap();
+            let eligible_teams = teams
+                .iter()
+                .filter(|team| !busy_teams.contains(team) && !referees_this_day.contains(team))
+                .collect::<Vec<_>>();
+
+            if eligible_teams.is_empty() {
+                return Err(AppError::MissingGame);
+            }
+            let referee = *eligible_teams
+                .iter()
+                .min_by_key(|team| referee_count[*team])
+                .unwrap();
+
+            *referee_count.entry(referee).or_insert(0) += 1;
+            referees_this_day.push(referee);
+
+            let game = Game::new_with_game_day(
+                game.get_home_team().clone(),
+                game.get_away_team().clone(),
+                game.get_game_day().date_naive(),
+                game.get_game_time()?,
+                Some(referee.clone()),
+            );
+            schedule_with_referee.push(game);
+        }
+
+        Ok(schedule_with_referee)
     }
 }
 

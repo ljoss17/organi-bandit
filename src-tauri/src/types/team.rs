@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq)]
+#[derive(Clone, Debug, Default, Eq, Hash, Serialize, Deserialize, PartialEq)]
 pub struct Team {
     name: String,
     seed: Option<u32>,

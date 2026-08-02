@@ -68,6 +68,7 @@ impl Tournament for SingleElimination {
                 bye_team.clone(),
                 *game_day_scheduler.current_day(),
                 GameTime::new(0, 0).unwrap(),
+                None,
             );
 
             schedule.push(game);
@@ -86,6 +87,7 @@ impl Tournament for SingleElimination {
                 away_team,
                 *game_day_scheduler.current_day(),
                 game_time,
+                None,
             );
             schedule.push(game);
 
@@ -108,6 +110,7 @@ impl Tournament for SingleElimination {
                 away_team,
                 *game_day_scheduler.current_day(),
                 game_time,
+                None,
             );
             second_round_schedule.push(game);
             game_time_index = (game_time_index + 1) % game_times.len();
@@ -126,6 +129,7 @@ impl Tournament for SingleElimination {
                 away_team,
                 *game_day_scheduler.current_day(),
                 game_time,
+                None,
             );
             second_round_schedule.push(game);
             game_time_index = (game_time_index + 1) % game_times.len();
@@ -150,6 +154,7 @@ impl Tournament for SingleElimination {
                     away_team,
                     *game_day_scheduler.current_day(),
                     game_time,
+                    None,
                 );
                 schedule.push(game);
                 game_time_index = (game_time_index + 1) % game_times.len();
