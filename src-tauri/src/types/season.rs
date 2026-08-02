@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 use crate::errors::AppError;
 use crate::traits::tournament::Tournament;
 use crate::types::game::Game;
+use crate::types::game_time::GameTime;
 use crate::types::team::Team;
 use crate::types::tournament::TournamentSelection;
 use crate::utils::serde_datetime;
@@ -15,7 +16,8 @@ pub struct Season<G: Tournament, P: Tournament> {
     start_day: DateTime<Tz>,
     #[serde(with = "serde_datetime")]
     end_day: DateTime<Tz>,
-    max_games_per_day: usize,
+    game_times: Vec<GameTime>,
+    number_fields: usize,
     tournament: TournamentSelection<G, P>,
     game_days: Vec<Weekday>,
 }
@@ -28,14 +30,16 @@ where
     pub fn new(
         start_day: DateTime<Tz>,
         end_day: DateTime<Tz>,
-        max_games_per_day: usize,
+        game_times: Vec<GameTime>,
+        number_fields: usize,
         tournament: TournamentSelection<G, P>,
         game_days: Vec<Weekday>,
     ) -> Self {
         Self {
             start_day,
             end_day,
-            max_games_per_day,
+            game_times,
+            number_fields,
             tournament,
             game_days,
         }
@@ -50,7 +54,7 @@ where
     }
 
     pub fn max_games_per_day(&self) -> usize {
-        self.max_games_per_day
+        self.number_fields * self.game_times.len()
     }
 
     pub fn tournament(&self) -> &TournamentSelection<G, P> {
@@ -128,6 +132,7 @@ mod tests {
         let season = Season::new(
             Zurich.with_ymd_and_hms(2026, 5, 13, 8, 45, 0).unwrap(),
             Zurich.with_ymd_and_hms(2026, 9, 22, 18, 0, 0).unwrap(),
+            vec![GameTime::new(9, 0).unwrap()],
             2,
             TournamentSelection::new(RoundRobin, SingleElimination::new(false)),
             vec![Weekday::Sat],
@@ -145,6 +150,7 @@ mod tests {
         let season = Season::new(
             Zurich.with_ymd_and_hms(2026, 5, 13, 8, 45, 0).unwrap(),
             Zurich.with_ymd_and_hms(2026, 9, 22, 18, 0, 0).unwrap(),
+            vec![GameTime::new(9, 0).unwrap()],
             2,
             TournamentSelection::new(RoundRobin, SingleElimination::new(false)),
             vec![Weekday::Sat],
@@ -162,6 +168,7 @@ mod tests {
         let season = Season::new(
             Zurich.with_ymd_and_hms(2026, 5, 13, 8, 45, 0).unwrap(),
             Zurich.with_ymd_and_hms(2026, 9, 22, 18, 0, 0).unwrap(),
+            vec![GameTime::new(9, 0).unwrap()],
             2,
             TournamentSelection::new(RoundRobin, SingleElimination::new(false)),
             vec![Weekday::Sat],
@@ -181,6 +188,7 @@ mod tests {
         let season = Season::new(
             Zurich.with_ymd_and_hms(2026, 5, 13, 8, 45, 0).unwrap(),
             Zurich.with_ymd_and_hms(2026, 7, 1, 18, 0, 0).unwrap(),
+            vec![GameTime::new(9, 0).unwrap()],
             2,
             TournamentSelection::new(RoundRobin, SingleElimination::new(false)),
             vec![Weekday::Sat],
@@ -210,6 +218,7 @@ mod tests {
         let season = Season::new(
             Zurich.with_ymd_and_hms(2026, 5, 4, 8, 45, 0).unwrap(),
             Zurich.with_ymd_and_hms(2026, 5, 8, 18, 0, 0).unwrap(),
+            vec![GameTime::new(9, 0).unwrap()],
             2,
             TournamentSelection::new(RoundRobin, SingleElimination::new(false)),
             vec![Weekday::Sat],

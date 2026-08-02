@@ -9,6 +9,7 @@ use crate::errors::AppError;
 use crate::impls::round_robin::RoundRobin;
 use crate::impls::single_elimination::SingleElimination;
 use crate::types::game::Game;
+use crate::types::game_time::GameTime;
 use crate::types::season::Season;
 use crate::types::team::Team;
 use crate::types::tournament::TournamentSelection;
@@ -18,7 +19,8 @@ pub fn tauri_generate_schedule(
     teams: Vec<Team>,
     start_day_str: String,
     end_day_str: String,
-    max_games_per_day: usize,
+    game_times: Vec<GameTime>,
+    number_fields: usize,
     game_days_str: Vec<String>,
 ) -> Result<Vec<Game>, AppError> {
     let start_day_values = start_day_str.split("-").collect::<Vec<_>>();
@@ -52,7 +54,8 @@ pub fn tauri_generate_schedule(
     let season = Season::new(
         start_day,
         end_day,
-        max_games_per_day,
+        game_times,
+        number_fields,
         TournamentSelection::new(RoundRobin, SingleElimination::new(true)),
         parse_weekday(game_days_str)?,
     );

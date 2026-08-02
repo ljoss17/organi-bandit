@@ -29,6 +29,8 @@ pub enum AppError {
     XlsxError(#[from] XlsxError),
     #[error("Date out of range")]
     DateOutOfRange(#[from] OutOfRange),
+    #[error("invalid time. Hour {0}, minute {0}")]
+    InvalidTime(u8, u8),
 }
 
 impl Serialize for AppError {

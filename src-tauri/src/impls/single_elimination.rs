@@ -171,6 +171,7 @@ mod tests {
     use chrono_tz::Tz;
 
     use crate::impls::round_robin::RoundRobin;
+    use crate::types::game_time::GameTime;
     use crate::types::season::Season;
     use crate::types::tournament::TournamentSelection;
 
@@ -215,6 +216,7 @@ mod tests {
         let season = Season::new(
             start_day(),
             end_day(),
+            vec![GameTime::new(9, 0).unwrap()],
             2,
             TournamentSelection::new(RoundRobin, SingleElimination::new(false)),
             vec![Weekday::Sat],
@@ -236,6 +238,7 @@ mod tests {
         let season = Season::new(
             start_day(),
             end_day_later(),
+            vec![GameTime::new(9, 0).unwrap()],
             2,
             TournamentSelection::new(RoundRobin, SingleElimination::new(false)),
             vec![Weekday::Sat],
@@ -257,6 +260,7 @@ mod tests {
         let season = Season::new(
             start_day(),
             end_day(),
+            vec![GameTime::new(9, 0).unwrap()],
             1,
             TournamentSelection::new(RoundRobin, SingleElimination::new(false)),
             vec![Weekday::Sat],
@@ -278,6 +282,7 @@ mod tests {
         let season = Season::new(
             start_day(),
             end_day(),
+            vec![GameTime::new(9, 0).unwrap()],
             2,
             TournamentSelection::new(RoundRobin, SingleElimination::new(false)),
             vec![Weekday::Sat],
@@ -299,6 +304,7 @@ mod tests {
         let season = Season::new(
             start_day(),
             end_day_later(),
+            vec![GameTime::new(9, 0).unwrap()],
             2,
             TournamentSelection::new(RoundRobin, SingleElimination::new(false)),
             vec![Weekday::Sat],
