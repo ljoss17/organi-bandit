@@ -71,6 +71,9 @@ function collectSeasonInput() {
 
 document.getElementById("generate-schedule").addEventListener("click", async () => {
   const { startDate, endDate, numberFields, gameTimes, gameDays, teams } = collectSeasonInput();
+  const statusMessage = document.getElementById("status-message");
+  statusMessage.textContent = "";
+  statusMessage.classList.remove("success", "error");
 
   try {
     const schedule = await window.__TAURI__.core.invoke("tauri_generate_schedule", {
@@ -82,11 +85,16 @@ document.getElementById("generate-schedule").addEventListener("click", async () 
       gameDaysStr: gameDays,
     });
     console.log(schedule);
-    const result = await window.__TAURI__.core.invoke("generate_excel_schedule", {
+    await window.__TAURI__.core.invoke("generate_excel_schedule", {
       schedule,
       numberFields,
     });
+
+    statusMessage.textContent = "Success";
+    statusMessage.classList.add("success");
   } catch (error) {
     console.error(error);
+    statusMessage.textContent = String(error);
+    statusMessage.classList.add("error");
   }
 });

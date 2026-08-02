@@ -11,8 +11,8 @@
     "windows": [
       {
         "title": "organi-bandit",
-        "width": 800,
-        "height": 600
+        "width": 1000,
+        "height": 1200
       }
     ],
     "security": {

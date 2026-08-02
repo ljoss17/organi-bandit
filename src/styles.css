@@ -91,6 +91,28 @@
   margin-top: 0.6em;
 }
 
+.status-message {
+  margin-top: 1.5em;
+  min-height: 1.2em;
+  width: 100%;
+  max-width: 400px;
+  padding: 0.6em 1em;
+  border: 1px solid #d9d9d9;
+  border-radius: 8px;
+  background-color: #ffffff;
+  color: #0f0f0f;
+}
+
+.status-message.success {
+  color: #1a7f37;
+  font-weight: 500;
+}
+
+.status-message.error {
+  color: #c0392b;
+  font-weight: 500;
+}
+
 .game-days {
   margin-top: 1.5em;
   border: 1px solid #d9d9d9;
