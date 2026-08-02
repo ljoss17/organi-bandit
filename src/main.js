@@ -1,11 +1,13 @@
 let teams = [];
+let outputDirectoryPath = "";
 
-async function loadTeams() {
+async function loadTeams(filePath) {
   const teamsList = document.getElementById("teams-list");
+  teamsList.innerHTML = "";
 
   try {
     teams = await window.__TAURI__.core.invoke("read_team_list", {
-      filePath: "resources/teams.json",
+      filePath,
     });
 
     for (const team of teams) {
@@ -18,7 +20,29 @@ async function loadTeams() {
   }
 }
 
-loadTeams();
+loadTeams("resources/teams.json");
+
+document.getElementById("browse-teams").addEventListener("click", async () => {
+  const selected = await window.__TAURI__.dialog.open({
+    multiple: false,
+    filters: [{ name: "JSON", extensions: ["json"] }],
+  });
+
+  if (selected) {
+    await loadTeams(selected);
+  }
+});
+
+document.getElementById("browse-output-folder").addEventListener("click", async () => {
+  const selected = await window.__TAURI__.dialog.open({
+    directory: true,
+  });
+
+  if (selected) {
+    outputDirectoryPath = selected;
+    document.getElementById("output-folder").value = selected;
+  }
+});
 
 function renderTimeSlots(count) {
   const container = document.getElementById("time-slots");
@@ -75,6 +99,12 @@ document.getElementById("generate-schedule").addEventListener("click", async () 
   statusMessage.textContent = "";
   statusMessage.classList.remove("success", "error");
 
+  if (!outputDirectoryPath) {
+    statusMessage.textContent = "Please select an output folder before generating.";
+    statusMessage.classList.add("error");
+    return;
+  }
+
   try {
     const schedule = await window.__TAURI__.core.invoke("tauri_generate_schedule", {
       teams,
@@ -88,6 +118,7 @@ document.getElementById("generate-schedule").addEventListener("click", async () 
     await window.__TAURI__.core.invoke("generate_excel_schedule", {
       schedule,
       numberFields,
+      outputDirectoryPath,
     });
 
     statusMessage.textContent = "Success";

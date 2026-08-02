@@ -64,7 +64,11 @@ pub fn tauri_generate_schedule(
 }
 
 #[tauri::command]
-pub fn generate_excel_schedule(schedule: Vec<Game>, number_fields: u16) -> Result<(), AppError> {
+pub fn generate_excel_schedule(
+    schedule: Vec<Game>,
+    number_fields: u16,
+    output_directory_path: String,
+) -> Result<(), AppError> {
     // Create a new Excel file object.
     let mut workbook = Workbook::new();
 
@@ -115,7 +119,8 @@ pub fn generate_excel_schedule(schedule: Vec<Game>, number_fields: u16) -> Resul
     worksheet.autofit();
 
     // Save the file to disk.
-    workbook.save(format!("calendrier_{year}.xlsx"))?;
+    //workbook.save(format!("calendrier_{year}.xlsx"))?;
+    workbook.save(format!("{output_directory_path}/calendrier_{year}.xlsx"))?;
     Ok(())
 }
 

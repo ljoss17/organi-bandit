@@ -126,10 +126,7 @@ where
             self.number_fields(),
             false,
         )?;
-        // self.add_referees(
-        //     [&group_stage_schedule[..], &playoff_schedule[..]].concat(),
-        //     teams,
-        // )
+
         Ok([&group_stage_schedule[..], &playoff_schedule[..]].concat())
     }
 }

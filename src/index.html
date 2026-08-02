@@ -11,6 +11,7 @@
     <div class="page">
       <aside class="sidebar">
         <h2>Teams</h2>
+        <button type="button" id="browse-teams">Browse teams file...</button>
         <ul id="teams-list"></ul>
       </aside>
 
@@ -57,6 +58,18 @@
             <label><input type="checkbox" name="game-days" value="Sun" /> Sunday</label>
           </div>
         </fieldset>
+
+        <div class="field">
+          <label for="output-folder">Output folder</label>
+          <input
+            type="text"
+            id="output-folder"
+            name="output-folder"
+            readonly
+            placeholder="Select a folder..."
+          />
+          <button type="button" id="browse-output-folder">Browse...</button>
+        </div>
 
         <button type="button" id="generate-schedule">Generate schedule</button>
 
