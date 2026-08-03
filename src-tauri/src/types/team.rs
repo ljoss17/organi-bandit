@@ -19,9 +19,6 @@ impl Team {
     }
 
     pub fn get_seed(&self) -> u32 {
-        if let Some(seed) = self.seed {
-            return seed;
-        }
-        0
+        self.seed.unwrap_or(0)
     }
 }

@@ -1,4 +1,4 @@
-use chrono::{DateTime, Datelike, NaiveDate, TimeDelta, Weekday};
+use chrono::{DateTime, Datelike, NaiveDate, Weekday};
 use chrono_tz::Tz;
 use serde::{Deserialize, Serialize};
 
@@ -7,7 +7,7 @@ use crate::traits::tournament::Tournament;
 use crate::types::game::Game;
 use crate::types::game_time::GameTime;
 use crate::types::team::Team;
-use crate::types::tournament::TournamentSelection;
+use crate::types::tournament_selection::TournamentSelection;
 use crate::utils::serde_datetime;
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -54,7 +54,7 @@ where
         &self.end_day
     }
 
-    pub fn game_times(&self) -> &Vec<GameTime> {
+    pub fn game_times(&self) -> &[GameTime] {
         &self.game_times
     }
 
@@ -71,7 +71,7 @@ where
     }
 
     pub fn is_game_day_in_range(&self, game_day: DateTime<Tz>) -> bool {
-        game_day.ge(&self.start_day) && game_day.le(&self.end_day)
+        game_day >= self.start_day && game_day <= self.end_day
     }
 
     pub fn get_all_game_days(&self) -> Vec<NaiveDate> {
@@ -86,11 +86,7 @@ where
 
     pub fn compute_season_schedule(&self, teams: &[Team]) -> Result<Vec<Game>, AppError> {
         let all_game_days = self.get_all_game_days();
-        self.tournament().group_stage().validate_parameters(
-            teams,
-            &all_game_days,
-            self.max_games_per_day(),
-        )?;
+
         let group_stage_schedule = self.tournament().group_stage().compute_schedule(
             teams,
             &all_game_days,
@@ -106,19 +102,13 @@ where
 
         let playoff_game_days = all_game_days
             .iter()
-            .filter(|game| {
-                game.signed_duration_since(last_group_stage_day.date_naive()) > TimeDelta::zero()
-            })
-            .cloned()
+            .filter(|day| **day > last_group_stage_day.date_naive())
+            .copied()
             .collect::<Vec<_>>();
+        // Note: Currently playoffs are fixed to quarter finales -> finals
         let playoff_teams = teams.iter().take(8).cloned().collect::<Vec<_>>();
 
-        self.tournament().playoff().validate_parameters(
-            &playoff_teams,
-            &playoff_game_days,
-            self.max_games_per_day(),
-        )?;
-
+        // Referees are not automatically set since this will depend on the group stage results
         let playoff_schedule = self.tournament().playoff().compute_schedule(
             &playoff_teams,
             &playoff_game_days,
@@ -127,7 +117,9 @@ where
             false,
         )?;
 
-        Ok([&group_stage_schedule[..], &playoff_schedule[..]].concat())
+        let mut full_schedule = group_stage_schedule;
+        full_schedule.extend(playoff_schedule);
+        Ok(full_schedule)
     }
 }
 

@@ -12,7 +12,7 @@ use crate::types::game::Game;
 use crate::types::game_time::GameTime;
 use crate::types::season::Season;
 use crate::types::team::Team;
-use crate::types::tournament::TournamentSelection;
+use crate::types::tournament_selection::TournamentSelection;
 
 #[tauri::command]
 pub fn tauri_generate_schedule(

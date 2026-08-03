@@ -7,6 +7,7 @@ use crate::types::game::Game;
 use crate::types::game_time::GameTime;
 use crate::types::team::Team;
 use crate::utils::game_day_scheduler::GameDayScheduler;
+use crate::utils::game_time_scheduler::GameTimeScheduler;
 
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
 pub struct SingleElimination {
@@ -28,6 +29,7 @@ impl Tournament for SingleElimination {
         self.validate_tournament_duration(teams, game_days, max_games_per_day)
     }
 
+    // Note: Currently Single Elimination does not support referees setup
     fn compute_schedule(
         &self,
         teams: &[Team],
@@ -36,6 +38,7 @@ impl Tournament for SingleElimination {
         number_fields: usize,
         _with_referees: bool,
     ) -> Result<Vec<Game>, AppError> {
+        self.validate_parameters(teams, game_days, number_fields * game_times.len())?;
         let number_of_teams = teams.len();
         let bracket_size = number_of_teams.next_power_of_two();
         let number_of_byes = bracket_size - number_of_teams;
@@ -55,11 +58,14 @@ impl Tournament for SingleElimination {
             inner.sort_by_key(|team| team.get_seed());
             inner
         };
+        inner_teams.reserve(number_of_byes);
 
-        let mut schedule = vec![];
+        let mut schedule = Vec::with_capacity(bracket_size - 1);
         let mut game_day_scheduler =
             GameDayScheduler::new(game_days, game_times.len() * number_fields);
+        let mut game_time_scheduler = GameTimeScheduler::new(game_times);
 
+        let bye_time = GameTime::new(0, 0)?;
         for i in 0..number_of_byes {
             let home_team = inner_teams[i].clone();
             let bye_team = Team::new("Bye", None);
@@ -68,7 +74,7 @@ impl Tournament for SingleElimination {
                 home_team,
                 bye_team.clone(),
                 *game_day_scheduler.current_day(),
-                GameTime::new(0, 0).unwrap(),
+                bye_time,
                 None,
             );
 
@@ -76,13 +82,11 @@ impl Tournament for SingleElimination {
             inner_teams.push(bye_team);
         }
 
-        let mut game_time_index = 0;
-
         // Compute the first round of single elimination, giving higher seed teams a bye week
         for offset in 0..(number_of_teams - number_of_byes) / 2 {
             let home_team = inner_teams[number_of_byes + offset].clone();
             let away_team = inner_teams[number_of_teams - 1 - offset].clone();
-            let game_time = game_times[game_time_index].clone();
+            let game_time = *game_time_scheduler.current_time();
             let game = Game::new_with_game_day(
                 home_team,
                 away_team,
@@ -93,19 +97,20 @@ impl Tournament for SingleElimination {
             schedule.push(game);
 
             game_day_scheduler.try_advance();
-            game_time_index = (game_time_index + 1) % game_times.len();
+            game_time_scheduler.advance();
         }
 
         game_day_scheduler.try_force_advance();
 
-        let mut second_round_schedule = vec![];
+        let mut second_round_schedule = Vec::with_capacity(bracket_size / 4);
         let second_round_byes = number_of_byes / 2;
-        game_time_index = 0;
+        game_time_scheduler.reset();
+
         // Compute the second round of single elimination, taking into account first round bye weeks
         for offset in 0..second_round_byes {
             let home_team = inner_teams[second_round_byes + offset].clone();
             let away_team = inner_teams[number_of_teams - 3 - offset].clone();
-            let game_time = game_times[game_time_index].clone();
+            let game_time = *game_time_scheduler.current_time();
             let game = Game::new_with_game_day(
                 home_team,
                 away_team,
@@ -114,17 +119,17 @@ impl Tournament for SingleElimination {
                 None,
             );
             second_round_schedule.push(game);
-            game_time_index = (game_time_index + 1) % game_times.len();
 
             game_day_scheduler.try_advance();
+            game_time_scheduler.advance();
         }
         let remaining_second_round_slots = bracket_size / 4 - second_round_schedule.len();
 
-        game_time_index = 0;
+        game_time_scheduler.reset();
         for team in inner_teams.iter().take(remaining_second_round_slots) {
             let home_team = team.clone();
             let away_team = Team::new("WinnerPrevious", None);
-            let game_time = game_times[game_time_index].clone();
+            let game_time = *game_time_scheduler.current_time();
             let game = Game::new_with_game_day(
                 home_team,
                 away_team,
@@ -133,21 +138,21 @@ impl Tournament for SingleElimination {
                 None,
             );
             second_round_schedule.push(game);
-            game_time_index = (game_time_index + 1) % game_times.len();
 
             game_day_scheduler.try_advance();
+            game_time_scheduler.advance();
         }
 
         schedule.append(&mut second_round_schedule);
 
         game_day_scheduler.try_force_advance();
 
-        game_time_index = 0;
+        game_time_scheduler.reset();
         // Compute all remaining rounds as there is no side effect from bye weeks
         for round in 3..=number_of_round {
             let number_of_games = bracket_size / 2usize.pow(round);
             for _ in 0..number_of_games {
-                let game_time = game_times[game_time_index].clone();
+                let game_time = *game_time_scheduler.current_time();
                 let home_team = Team::new("WinnerA", None);
                 let away_team = Team::new("WinnerB", None);
                 let game = Game::new_with_game_day(
@@ -158,9 +163,9 @@ impl Tournament for SingleElimination {
                     None,
                 );
                 schedule.push(game);
-                game_time_index = (game_time_index + 1) % game_times.len();
 
                 game_day_scheduler.try_advance();
+                game_time_scheduler.advance();
             }
         }
 
@@ -209,7 +214,7 @@ mod tests {
     use crate::impls::round_robin::RoundRobin;
     use crate::types::game_time::GameTime;
     use crate::types::season::Season;
-    use crate::types::tournament::TournamentSelection;
+    use crate::types::tournament_selection::TournamentSelection;
 
     fn start_day() -> DateTime<Tz> {
         Zurich.with_ymd_and_hms(2026, 5, 13, 8, 45, 0).unwrap()

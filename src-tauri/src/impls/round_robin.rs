@@ -11,6 +11,7 @@ use crate::types::game::Game;
 use crate::types::game_time::GameTime;
 use crate::types::team::Team;
 use crate::utils::game_day_scheduler::GameDayScheduler;
+use crate::utils::game_time_scheduler::GameTimeScheduler;
 
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
 pub struct RoundRobin;
@@ -37,6 +38,9 @@ impl Tournament for RoundRobin {
         number_fields: usize,
         with_referees: bool,
     ) -> Result<Vec<Game>, AppError> {
+        // Validate parameters
+        self.validate_tournament_duration(teams, game_days, number_fields * game_times.len())?;
+
         let mut rng = rand::rng();
         let mut inner_teams = teams.to_vec();
         if !inner_teams.len().is_multiple_of(2) {
@@ -49,12 +53,12 @@ impl Tournament for RoundRobin {
 
         let mut game_day_scheduler =
             GameDayScheduler::new(game_days, game_times.len() * number_fields);
-        let mut game_time_index = 0;
+        let mut game_time_scheduler = GameTimeScheduler::new(game_times);
 
         for _ in 0..number_teams - 1 {
             let round_day = *game_day_scheduler.current_day();
             for i in 0..(number_teams / 2) {
-                let game_time = game_times[game_time_index].clone();
+                let game_time = *game_time_scheduler.current_time();
                 let home_team = inner_teams[i].clone();
                 let away_team = inner_teams[number_teams - 1 - i].clone();
                 let is_bye = home_team.get_name() == "Bye" || away_team.get_name() == "Bye";
@@ -63,20 +67,14 @@ impl Tournament for RoundRobin {
                 } else {
                     *game_day_scheduler.current_day()
                 };
-                let game = Game::new_with_game_day(
-                    home_team.clone(),
-                    away_team.clone(),
-                    game_day,
-                    game_time,
-                    None,
-                );
+                let game = Game::new_with_game_day(home_team, away_team, game_day, game_time, None);
                 schedule.push(game);
                 if !is_bye {
                     game_day_scheduler.try_advance();
-                    game_time_index = (game_time_index + 1) % game_times.len();
+                    game_time_scheduler.advance();
                 }
             }
-            inner_teams = Self::rotate_teams(inner_teams);
+            Self::rotate_teams(&mut inner_teams);
         }
 
         if with_referees {
@@ -88,17 +86,8 @@ impl Tournament for RoundRobin {
 }
 
 impl RoundRobin {
-    fn rotate_teams(teams: Vec<Team>) -> Vec<Team> {
-        let number_teams = teams.len();
-        let mut resulting_teams = vec![Team::default(); number_teams];
-        let mut i = number_teams - 1;
-        while i >= 2 {
-            resulting_teams[i] = teams[i - 1].clone();
-            i -= 1;
-        }
-        resulting_teams[0] = teams[0].clone();
-        resulting_teams[1] = teams[number_teams - 1].clone();
-        resulting_teams
+    fn rotate_teams(teams: &mut [Team]) {
+        teams[1..].rotate_right(1);
     }
 
     fn validate_tournament_duration(
@@ -107,11 +96,10 @@ impl RoundRobin {
         game_days: &[NaiveDate],
         max_games_per_day: usize,
     ) -> Result<(), AppError> {
-        let mut inner_teams = teams.to_vec();
-        if !inner_teams.len().is_multiple_of(2) {
-            inner_teams.push(Team::new("Bye", None));
+        if teams.is_empty() {
+            return Err(AppError::NotEnoughTeams(0, 2));
         }
-        let number_teams = inner_teams.len();
+        let number_teams = teams.len() + teams.len() % 2;
         let total_number_games = (number_teams * (number_teams - 1)) / 2;
 
         if total_number_games > max_games_per_day * game_days.len() {
@@ -134,6 +122,7 @@ impl RoundRobin {
         let mut busy_teams_set: HashMap<&DateTime<Tz>, Vec<&Team>> = HashMap::new();
         for game in schedule.iter() {
             let game_day = game.get_game_day();
+            // Teams are only busy for specific game time, not entire day
             busy_teams_set
                 .entry(game_day)
                 .or_default()
@@ -188,7 +177,7 @@ mod tests {
     use crate::impls::single_elimination::SingleElimination;
     use crate::types::game_time::GameTime;
     use crate::types::season::Season;
-    use crate::types::tournament::TournamentSelection;
+    use crate::types::tournament_selection::TournamentSelection;
 
     fn start_day() -> DateTime<Tz> {
         Zurich.with_ymd_and_hms(2026, 5, 13, 8, 45, 0).unwrap()
