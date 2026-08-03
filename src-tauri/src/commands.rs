@@ -89,11 +89,14 @@ pub fn generate_excel_schedule(
     worksheet.set_column_width(2, 4)?;
     worksheet.set_column_width(7, 4)?;
 
+    let mut day_index = 0;
+
     for game in sorted_schedule.iter() {
         let game_day = game.get_game_day();
         if game_day.date_naive() != current_day {
             row += 2;
-            write_day_row(worksheet, row, game_day)?;
+            write_day_row(worksheet, row, game_day, day_index)?;
+            day_index += 1;
             current_day = game_day.date_naive();
             row += 1;
             write_header_row(worksheet, row, 2)?;
@@ -135,6 +138,7 @@ fn write_day_row(
     worksheet: &mut Worksheet,
     row: u32,
     game_day: &DateTime<Tz>,
+    day_index: u32,
 ) -> Result<(), AppError> {
     let day = game_day.day();
     let month = game_day.month();
@@ -152,7 +156,7 @@ fn write_day_row(
         0,
         row,
         10,
-        &format!("Day 1 - {day} {} {year}", month_str.name()),
+        &format!("Day {day_index}: {day} {} {year}", month_str.name()),
         &title_format,
     )?;
     worksheet.set_row_height(row, 25)?;

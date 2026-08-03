@@ -41,6 +41,41 @@
   padding: 0.4em 0;
 }
 
+.team-edit-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4em;
+  margin-top: 0.6em;
+}
+
+.team-edit-controls button,
+.team-row button {
+  padding: 0.3em 0.7em;
+}
+
+.team-row {
+  display: flex;
+  align-items: center;
+  gap: 0.4em;
+}
+
+.team-row input[type="text"] {
+  flex: 1;
+  min-width: 0;
+  padding: 0.3em 0.5em;
+}
+
+.team-row input[type="number"] {
+  width: 70px;
+  padding: 0.3em 0.5em;
+}
+
+.sidebar .status-message {
+  margin-top: 0.8em;
+  width: auto;
+  max-width: none;
+}
+
 .container {
   flex: 1;
   margin: 0;

@@ -6,9 +6,16 @@ use crate::types::team::Team;
 
 #[tauri::command]
 pub fn read_team_list(file_path: &Path) -> Result<Vec<Team>, AppError> {
-    let content = fs::read_to_string(file_path).map_err(AppError::ReadError)?;
-    let teams: Vec<Team> = serde_json::from_str(&content).map_err(AppError::DeserializeError)?;
+    let content = fs::read_to_string(file_path)?;
+    let teams: Vec<Team> = serde_json::from_str(&content)?;
     Ok(teams)
+}
+
+#[tauri::command]
+pub fn write_team_list(file_path: &Path, new_teams: Vec<Team>) -> Result<(), AppError> {
+    let serialised_teams = serde_json::to_string(&new_teams)?;
+    fs::write(file_path, &serialised_teams)?;
+    Ok(())
 }
 
 #[cfg(test)]
