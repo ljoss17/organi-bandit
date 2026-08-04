@@ -1,0 +1,43 @@
+name: Tests
+
+on:
+  pull_request:
+    paths:
+      - src-tauri/**
+  push:
+    paths:
+      - src-tauri/**
+
+defaults:
+  run:
+    working-directory: src-tauri
+
+jobs:
+  fmt:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          rustup-components: rustfmt
+      - name: cargo fmt
+        run: cargo fmt --all -- --check
+
+  clippy-all-features:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          rustup-components: clippy
+      - name: cargo clippy
+        run: cargo clippy --all-features --all-targets -- -D warnings
+
+  test-stable:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+      - name: cargo test
+        run: cargo test --all-features
