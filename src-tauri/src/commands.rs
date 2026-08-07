@@ -1,5 +1,4 @@
-use chrono::{DateTime, Datelike, TimeZone, Weekday};
-use chrono_tz::Europe::Zurich;
+use chrono::{DateTime, Datelike};
 use chrono_tz::Tz;
 use rust_xlsxwriter::workbook::Workbook;
 use rust_xlsxwriter::worksheet::Worksheet;
@@ -9,55 +8,18 @@ use crate::errors::AppError;
 use crate::impls::round_robin::RoundRobin;
 use crate::impls::single_elimination::SingleElimination;
 use crate::types::game::Game;
-use crate::types::game_time::GameTime;
-use crate::types::season::Season;
+use crate::types::season::{Season, SeasonConfig};
 use crate::types::team::Team;
 use crate::types::tournament_selection::TournamentSelection;
 
 #[tauri::command]
 pub fn tauri_generate_schedule(
     teams: Vec<Team>,
-    start_day_str: String,
-    end_day_str: String,
-    game_times: Vec<GameTime>,
-    number_fields: usize,
-    game_days_str: Vec<String>,
+    season_config: SeasonConfig,
 ) -> Result<Vec<Game>, AppError> {
-    let start_day_values = start_day_str.split("-").collect::<Vec<_>>();
-    let start_day = Zurich
-        .with_ymd_and_hms(
-            start_day_values[0].parse()?,
-            start_day_values[1].parse()?,
-            start_day_values[2].parse()?,
-            0,
-            0,
-            0,
-        )
-        .single()
-        .ok_or(AppError::CreateDateTimeError(
-            start_day_values.into_iter().map(String::from).collect(),
-        ))?;
-    let end_day_values = end_day_str.split("-").collect::<Vec<_>>();
-    let end_day = Zurich
-        .with_ymd_and_hms(
-            end_day_values[0].parse()?,
-            end_day_values[1].parse()?,
-            end_day_values[2].parse()?,
-            0,
-            0,
-            0,
-        )
-        .single()
-        .ok_or(AppError::CreateDateTimeError(
-            end_day_values.into_iter().map(String::from).collect(),
-        ))?;
     let season = Season::new(
-        start_day,
-        end_day,
-        game_times,
-        number_fields,
+        season_config,
         TournamentSelection::new(RoundRobin, SingleElimination::new(true)),
-        parse_weekday(game_days_str)?,
     );
     let schedule = season.compute_season_schedule(&teams)?;
     Ok(schedule)
@@ -125,13 +87,6 @@ pub fn generate_excel_schedule(
     //workbook.save(format!("calendrier_{year}.xlsx"))?;
     workbook.save(format!("{output_directory_path}/calendrier_{year}.xlsx"))?;
     Ok(())
-}
-
-fn parse_weekday(days_str: Vec<String>) -> Result<Vec<Weekday>, AppError> {
-    days_str
-        .iter()
-        .map(|day| day.parse().map_err(AppError::WeekdayParseError))
-        .collect()
 }
 
 fn write_day_row(

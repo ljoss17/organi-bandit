@@ -31,16 +31,9 @@
           <img src="/assets/morges_bandits.png" class="logo bandits" alt="Bandits logo" />
         </div>
 
-        <div class="season-dates">
-          <div class="field">
-            <label for="start-date">Start date</label>
-            <input type="date" id="start-date" name="start-date" />
-          </div>
-
-          <div class="field">
-            <label for="end-date">End date</label>
-            <input type="date" id="end-date" name="end-date" />
-          </div>
+        <div class="field">
+          <label for="start-date">Start date</label>
+          <input type="date" id="start-date" name="start-date" />
         </div>
 
         <div class="field">
@@ -49,11 +42,96 @@
         </div>
 
         <div class="field">
-          <label for="number-time-slots">Number of time slots</label>
-          <input type="number" id="number-time-slots" name="number-time-slots" min="1" step="1" value="1" />
+          <label for="start-time-hours">Start time</label>
+          <input
+            type="number"
+            id="start-time-hours"
+            name="start-time-hours"
+            min="0"
+            max="23"
+            step="1"
+            placeholder="HH"
+          />
+          <span>:</span>
+          <input
+            type="number"
+            id="start-time-minutes"
+            name="start-time-minutes"
+            min="0"
+            max="59"
+            step="1"
+            placeholder="MM"
+          />
         </div>
 
-        <div id="time-slots" class="time-slots"></div>
+        <div class="field">
+          <label for="time-between-games-hours">Time between games</label>
+          <input
+            type="number"
+            id="time-between-games-hours"
+            name="time-between-games-hours"
+            min="0"
+            max="23"
+            step="1"
+            placeholder="HH"
+          />
+          <span>:</span>
+          <input
+            type="number"
+            id="time-between-games-minutes"
+            name="time-between-games-minutes"
+            min="0"
+            max="59"
+            step="1"
+            placeholder="MM"
+          />
+        </div>
+
+        <div class="field">
+          <label for="start-break-hours">Start break</label>
+          <input
+            type="number"
+            id="start-break-hours"
+            name="start-break-hours"
+            min="0"
+            max="23"
+            step="1"
+            placeholder="HH"
+          />
+          <span>:</span>
+          <input
+            type="number"
+            id="start-break-minutes"
+            name="start-break-minutes"
+            min="0"
+            max="59"
+            step="1"
+            placeholder="MM"
+          />
+        </div>
+
+        <div class="field">
+          <label for="end-break-hours">End break</label>
+          <input
+            type="number"
+            id="end-break-hours"
+            name="end-break-hours"
+            min="0"
+            max="23"
+            step="1"
+            placeholder="HH"
+          />
+          <span>:</span>
+          <input
+            type="number"
+            id="end-break-minutes"
+            name="end-break-minutes"
+            min="0"
+            max="59"
+            step="1"
+            placeholder="MM"
+          />
+        </div>
 
         <fieldset class="game-days">
           <legend>Game days</legend>

@@ -153,59 +153,47 @@ document.getElementById("browse-output-folder").addEventListener("click", async 
   }
 });
 
-function renderTimeSlots(count) {
-  const container = document.getElementById("time-slots");
-
-  while (container.children.length < count) {
-    const index = container.children.length;
-
-    const row = document.createElement("div");
-    row.className = "field";
-
-    const label = document.createElement("label");
-    label.textContent = `Time slot ${index + 1}`;
-
-    const input = document.createElement("input");
-    input.type = "time";
-    input.className = "time-slot-input";
-
-    row.appendChild(label);
-    row.appendChild(input);
-    container.appendChild(row);
-  }
-
-  Array.from(container.children).forEach((row, index) => {
-    row.hidden = index >= count;
-  });
+function readGameTime(fieldPrefix) {
+  return {
+    hour: Number(document.getElementById(`${fieldPrefix}-hours`).value) || 0,
+    minute: Number(document.getElementById(`${fieldPrefix}-minutes`).value) || 0,
+  };
 }
-
-const numberTimeSlotsInput = document.getElementById("number-time-slots");
-numberTimeSlotsInput.addEventListener("input", () => {
-  const count = Math.max(1, Number(numberTimeSlotsInput.value) || 1);
-  renderTimeSlots(count);
-});
-
-renderTimeSlots(Number(numberTimeSlotsInput.value));
 
 function collectSeasonInput() {
   const startDate = document.getElementById("start-date").value;
-  const endDate = document.getElementById("end-date").value;
   const numberFields = Number(document.getElementById("number-fields").value);
-  const gameTimes = Array.from(document.querySelectorAll(".time-slot-input"))
-    .filter((input) => !input.closest(".field").hidden)
-    .map((input) => {
-      const [hour, minute] = input.value.split(":").map(Number);
-      return { hour, minute };
-    });
+  const startTime = readGameTime("start-time");
+  const timeBetweenGames = readGameTime("time-between-games");
+  const startBreak = readGameTime("start-break");
+  const endBreak = readGameTime("end-break");
   const gameDays = Array.from(document.querySelectorAll('input[name="game-days"]:checked')).map(
     (checkbox) => checkbox.value,
   );
 
-  return { startDate, endDate, numberFields, gameTimes, gameDays, teams };
+  return {
+    startDate,
+    numberFields,
+    startTime,
+    timeBetweenGames,
+    startBreak,
+    endBreak,
+    gameDays,
+    teams,
+  };
 }
 
 document.getElementById("generate-schedule").addEventListener("click", async () => {
-  const { startDate, endDate, numberFields, gameTimes, gameDays, teams } = collectSeasonInput();
+  const {
+    startDate,
+    numberFields,
+    startTime,
+    timeBetweenGames,
+    startBreak,
+    endBreak,
+    gameDays,
+    teams,
+  } = collectSeasonInput();
   const statusMessage = document.getElementById("status-message");
   statusMessage.textContent = "";
   statusMessage.classList.remove("success", "error");
@@ -219,11 +207,15 @@ document.getElementById("generate-schedule").addEventListener("click", async () 
   try {
     const schedule = await window.__TAURI__.core.invoke("tauri_generate_schedule", {
       teams,
-      startDayStr: startDate,
-      endDayStr: endDate,
-      gameTimes,
-      numberFields,
-      gameDaysStr: gameDays,
+      seasonConfig: {
+        startDate,
+        startTime,
+        startBreak,
+        endBreak,
+        timeBetweenGames,
+        numberFields,
+        gameDays,
+      },
     });
     console.log(schedule);
     await window.__TAURI__.core.invoke("generate_excel_schedule", {

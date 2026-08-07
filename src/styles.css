@@ -103,27 +103,11 @@
   align-items: center;
 }
 
-.season-dates {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 1em;
-  margin-top: 2em;
-}
-
 .field {
   display: flex;
   flex-direction: row;
   align-items: center;
   gap: 0.6em;
-}
-
-.time-slots {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 0.6em;
-  margin-top: 0.6em;
 }
 
 .status-message {

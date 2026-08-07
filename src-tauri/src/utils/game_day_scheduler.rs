@@ -1,21 +1,26 @@
-use chrono::NaiveDate;
+use chrono::{Datelike, Days, NaiveDate, Weekday};
 
 pub struct GameDayScheduler<'a> {
-    game_days: &'a [NaiveDate],
-    day_index: usize,
+    game_days: &'a [Weekday],
     current_day: NaiveDate,
-    remaining_games_today: usize,
-    max_games_per_day: usize,
 }
 
 impl<'a> GameDayScheduler<'a> {
-    pub fn new(game_days: &'a [NaiveDate], max_games_per_day: usize) -> Self {
+    pub fn new(start_day: &'a NaiveDate, game_days: &'a [Weekday]) -> Self {
+        let start_weekday = start_day.weekday();
+        let current_day = if !game_days.contains(&start_weekday) {
+            let next_weekday = game_days
+                .iter()
+                .min_by_key(|weekday| weekday.days_since(start_weekday))
+                .unwrap();
+            NaiveDate::from_isoywd_opt(start_day.year(), start_day.iso_week().week(), *next_weekday)
+                .unwrap()
+        } else {
+            *start_day
+        };
         Self {
             game_days,
-            day_index: 1,
-            current_day: game_days[0],
-            remaining_games_today: max_games_per_day,
-            max_games_per_day,
+            current_day,
         }
     }
 
@@ -24,24 +29,25 @@ impl<'a> GameDayScheduler<'a> {
     }
 
     // Advance the day if needed
-    pub fn try_advance(&mut self) {
-        self.remaining_games_today -= 1;
-        if self.remaining_games_today == 0 {
-            self.roll_to_next_day();
-        }
-    }
-
-    // Force advance the day needed
-    pub fn try_force_advance(&mut self) {
-        if self.remaining_games_today != self.max_games_per_day {
-            self.roll_to_next_day();
-        }
-    }
-
-    fn roll_to_next_day(&mut self) {
-        self.remaining_games_today = self.max_games_per_day;
-        self.current_day = self.game_days[self.day_index];
-        self.day_index += 1;
+    pub fn advance(&mut self) {
+        let current_weekday = self.current_day.weekday();
+        let days_to_next = self
+            .game_days
+            .iter()
+            .map(|weekday| {
+                let days = weekday.days_since(current_weekday);
+                if days == 0 {
+                    7
+                } else {
+                    days
+                }
+            })
+            .min()
+            .unwrap();
+        self.current_day = self
+            .current_day
+            .checked_add_days(Days::new(days_to_next as u64))
+            .unwrap();
     }
 }
 
@@ -49,66 +55,56 @@ impl<'a> GameDayScheduler<'a> {
 mod tests {
     use super::*;
 
-    use chrono::{DateTime, Datelike, TimeZone, Weekday};
+    use chrono::TimeZone;
     use chrono_tz::Europe::Zurich;
-    use chrono_tz::Tz;
 
-    const MAX_GAMES_PER_DAY: usize = 3;
+    #[test]
+    fn test_advance() {
+        // Wednesday
+        let start_day = NaiveDate::from_ymd_opt(2026, 5, 12).unwrap();
+        let mut game_day_scheduler =
+            GameDayScheduler::new(&start_day, &[Weekday::Tue, Weekday::Sat]);
 
-    fn start_day() -> DateTime<Tz> {
-        Zurich.with_ymd_and_hms(2026, 5, 13, 8, 45, 0).unwrap()
-    }
+        assert_eq!(game_day_scheduler.current_day(), &start_day);
 
-    fn end_day() -> DateTime<Tz> {
-        Zurich.with_ymd_and_hms(2026, 6, 4, 18, 0, 0).unwrap()
+        // Next Saturday
+        let next_saturday = NaiveDate::from_ymd_opt(2026, 5, 16).unwrap();
+
+        game_day_scheduler.advance();
+        assert_eq!(game_day_scheduler.current_day(), &next_saturday);
+
+        // Next Tuesday
+        let next_tuesday = NaiveDate::from_ymd_opt(2026, 5, 19).unwrap();
+
+        game_day_scheduler.advance();
+        assert_eq!(game_day_scheduler.current_day(), &next_tuesday);
     }
 
     #[test]
-    fn test_try_advance() {
-        let game_days = start_day()
-            .date_naive()
-            .iter_days()
-            .take_while(|day| day <= &end_day().date_naive())
-            .filter(|day| [Weekday::Sat].contains(&day.weekday()))
-            .collect::<Vec<_>>();
-        let mut game_day_scheduler = GameDayScheduler::new(&game_days, MAX_GAMES_PER_DAY);
+    fn test_advance_from_other_weekday() {
+        // Wednesday
+        let start_day = Zurich
+            .with_ymd_and_hms(2026, 5, 13, 8, 45, 0)
+            .unwrap()
+            .date_naive();
+        let mut game_day_scheduler =
+            GameDayScheduler::new(&start_day, &[Weekday::Tue, Weekday::Sat]);
 
-        assert_eq!(game_day_scheduler.current_day(), &game_days[0]);
+        // Next Saturday
+        let next_saturday = NaiveDate::from_ymd_opt(2026, 5, 16).unwrap();
 
-        // First advance should not change current day the first max_games_per_day - 1 calls
-        for _ in 0..MAX_GAMES_PER_DAY - 1 {
-            game_day_scheduler.try_advance();
-            assert_eq!(game_day_scheduler.current_day(), &game_days[0]);
-        }
+        assert_eq!(game_day_scheduler.current_day(), &next_saturday);
 
-        game_day_scheduler.try_advance();
-        assert_eq!(game_day_scheduler.current_day(), &game_days[1]);
-    }
+        // Next Tuesday
+        let next_tuesday = NaiveDate::from_ymd_opt(2026, 5, 19).unwrap();
 
-    #[test]
-    fn test_try_force_advance() {
-        let game_days = start_day()
-            .date_naive()
-            .iter_days()
-            .take_while(|day| day <= &end_day().date_naive())
-            .filter(|day| [Weekday::Sat].contains(&day.weekday()))
-            .collect::<Vec<_>>();
-        let mut game_day_scheduler = GameDayScheduler::new(&game_days, 3);
+        game_day_scheduler.advance();
+        assert_eq!(game_day_scheduler.current_day(), &next_tuesday);
 
-        assert_eq!(game_day_scheduler.current_day(), &game_days[0]);
+        // Next Tuesday
+        let next_saturday = NaiveDate::from_ymd_opt(2026, 5, 23).unwrap();
 
-        game_day_scheduler.try_force_advance();
-        assert_eq!(game_day_scheduler.current_day(), &game_days[0]);
-
-        // Set the state of the scheduler such that:
-        //  * try_advance() would not advance the day
-        //  * try_force_advance will advance the day
-        for _ in 0..MAX_GAMES_PER_DAY - 2 {
-            game_day_scheduler.try_advance();
-            assert_eq!(game_day_scheduler.current_day(), &game_days[0]);
-        }
-
-        game_day_scheduler.try_force_advance();
-        assert_eq!(game_day_scheduler.current_day(), &game_days[1]);
+        game_day_scheduler.advance();
+        assert_eq!(game_day_scheduler.current_day(), &next_saturday);
     }
 }

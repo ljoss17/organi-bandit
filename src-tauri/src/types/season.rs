@@ -1,5 +1,4 @@
-use chrono::{DateTime, Datelike, NaiveDate, Weekday};
-use chrono_tz::Tz;
+use chrono::{NaiveDate, Weekday};
 use serde::{Deserialize, Serialize};
 
 use crate::errors::AppError;
@@ -8,18 +7,74 @@ use crate::types::game::Game;
 use crate::types::game_time::GameTime;
 use crate::types::team::Team;
 use crate::types::tournament_selection::TournamentSelection;
-use crate::utils::serde_datetime;
+use crate::utils::game_day_scheduler::GameDayScheduler;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Season<G: Tournament, P: Tournament> {
-    #[serde(with = "serde_datetime")]
-    start_day: DateTime<Tz>,
-    #[serde(with = "serde_datetime")]
-    end_day: DateTime<Tz>,
-    game_times: Vec<GameTime>,
-    number_fields: usize,
+    season_config: SeasonConfig,
     tournament: TournamentSelection<G, P>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct SeasonConfig {
+    start_date: NaiveDate,
+    start_time: GameTime,
+    start_break: GameTime,
+    end_break: GameTime,
+    time_between_games: GameTime,
+    number_fields: u32,
     game_days: Vec<Weekday>,
+}
+
+impl SeasonConfig {
+    pub fn new(
+        start_date: NaiveDate,
+        start_time: GameTime,
+        start_break: GameTime,
+        end_break: GameTime,
+        time_between_games: GameTime,
+        number_fields: u32,
+        game_days: Vec<Weekday>,
+    ) -> Self {
+        Self {
+            start_date,
+            start_time,
+            start_break,
+            end_break,
+            time_between_games,
+            number_fields,
+            game_days,
+        }
+    }
+
+    pub fn start_date(&self) -> &NaiveDate {
+        &self.start_date
+    }
+
+    pub fn start_time(&self) -> &GameTime {
+        &self.start_time
+    }
+
+    pub fn time_between_games(&self) -> &GameTime {
+        &self.time_between_games
+    }
+
+    pub fn start_break(&self) -> &GameTime {
+        &self.start_break
+    }
+
+    pub fn end_break(&self) -> &GameTime {
+        &self.end_break
+    }
+
+    pub fn number_fields(&self) -> u32 {
+        self.number_fields
+    }
+
+    pub fn game_days(&self) -> &[Weekday] {
+        &self.game_days
+    }
 }
 
 impl<G, P> Season<G, P>
@@ -27,93 +82,47 @@ where
     G: Tournament,
     P: Tournament,
 {
-    pub fn new(
-        start_day: DateTime<Tz>,
-        end_day: DateTime<Tz>,
-        mut game_times: Vec<GameTime>,
-        number_fields: usize,
-        tournament: TournamentSelection<G, P>,
-        game_days: Vec<Weekday>,
-    ) -> Self {
-        game_times.sort();
+    pub fn new(season_config: SeasonConfig, tournament: TournamentSelection<G, P>) -> Self {
         Self {
-            start_day,
-            end_day,
-            game_times,
-            number_fields,
+            season_config,
             tournament,
-            game_days,
         }
     }
 
-    pub fn start_day(&self) -> &DateTime<Tz> {
-        &self.start_day
-    }
-
-    pub fn end_day(&self) -> &DateTime<Tz> {
-        &self.end_day
-    }
-
-    pub fn game_times(&self) -> &[GameTime] {
-        &self.game_times
-    }
-
-    pub fn number_fields(&self) -> usize {
-        self.number_fields
-    }
-
-    pub fn max_games_per_day(&self) -> usize {
-        self.number_fields * self.game_times.len()
+    pub fn season_config(&self) -> &SeasonConfig {
+        &self.season_config
     }
 
     pub fn tournament(&self) -> &TournamentSelection<G, P> {
         &self.tournament
     }
 
-    pub fn is_game_day_in_range(&self, game_day: DateTime<Tz>) -> bool {
-        game_day >= self.start_day && game_day <= self.end_day
-    }
-
-    pub fn get_all_game_days(&self) -> Vec<NaiveDate> {
-        let end_day = self.end_day.date_naive();
-        self.start_day
-            .date_naive()
-            .iter_days()
-            .take_while(|day| day <= &end_day)
-            .filter(|day| self.game_days.contains(&day.weekday()))
-            .collect::<Vec<_>>()
-    }
-
     pub fn compute_season_schedule(&self, teams: &[Team]) -> Result<Vec<Game>, AppError> {
-        let all_game_days = self.get_all_game_days();
-
         let group_stage_schedule = self.tournament().group_stage().compute_schedule(
             teams,
-            &all_game_days,
-            self.game_times(),
-            self.number_fields(),
+            self.season_config().start_date(),
+            self.season_config(),
             true,
         )?;
         let last_group_stage_day = group_stage_schedule
             .iter()
             .max_by_key(|game| game.get_game_day())
             .ok_or(AppError::MissingGame)?
-            .get_game_day();
+            .get_game_day()
+            .date_naive();
 
-        let playoff_game_days = all_game_days
-            .iter()
-            .filter(|day| **day > last_group_stage_day.date_naive())
-            .copied()
-            .collect::<Vec<_>>();
+        let mut game_day_scheduler =
+            GameDayScheduler::new(&last_group_stage_day, self.season_config().game_days());
+        game_day_scheduler.advance();
+
         // Note: Currently playoffs are fixed to quarter finales -> finals
         let playoff_teams = teams.iter().take(8).cloned().collect::<Vec<_>>();
 
         // Referees are not automatically set since this will depend on the group stage results
         let playoff_schedule = self.tournament().playoff().compute_schedule(
             &playoff_teams,
-            &playoff_game_days,
-            self.game_times(),
-            self.number_fields(),
+            game_day_scheduler.current_day(),
+            self.season_config(),
             false,
         )?;
 
@@ -129,112 +138,28 @@ mod tests {
     use crate::impls::single_elimination::SingleElimination;
 
     use super::*;
-    use chrono::NaiveDate;
-    use chrono::TimeZone;
-    use chrono_tz::Europe::Zurich;
-
-    #[test]
-    fn test_correct_game_day() {
-        let season = Season::new(
-            Zurich.with_ymd_and_hms(2026, 5, 13, 8, 45, 0).unwrap(),
-            Zurich.with_ymd_and_hms(2026, 9, 22, 18, 0, 0).unwrap(),
-            vec![GameTime::new(9, 0).unwrap()],
-            2,
-            TournamentSelection::new(RoundRobin, SingleElimination::new(false)),
-            vec![Weekday::Sat],
-        );
-        let game_day = Zurich.with_ymd_and_hms(2026, 6, 2, 8, 45, 0).unwrap();
-
-        assert!(
-            season.is_game_day_in_range(game_day),
-            "Game day should be between start and end date of the season"
-        );
-    }
-
-    #[test]
-    fn test_game_day_outside_season() {
-        let season = Season::new(
-            Zurich.with_ymd_and_hms(2026, 5, 13, 8, 45, 0).unwrap(),
-            Zurich.with_ymd_and_hms(2026, 9, 22, 18, 0, 0).unwrap(),
-            vec![GameTime::new(9, 0).unwrap()],
-            2,
-            TournamentSelection::new(RoundRobin, SingleElimination::new(false)),
-            vec![Weekday::Sat],
-        );
-        let game_day = Zurich.with_ymd_and_hms(2025, 6, 2, 8, 45, 0).unwrap();
-
-        assert!(
-            !season.is_game_day_in_range(game_day),
-            "Game day should be between start and end date of the season"
-        );
-    }
 
     #[test]
     fn test_serialize_deserialize() {
-        let season = Season::new(
-            Zurich.with_ymd_and_hms(2026, 5, 13, 8, 45, 0).unwrap(),
-            Zurich.with_ymd_and_hms(2026, 9, 22, 18, 0, 0).unwrap(),
-            vec![GameTime::new(9, 0).unwrap()],
+        let season_config = SeasonConfig::new(
+            NaiveDate::from_ymd_opt(2026, 5, 13).unwrap(),
+            GameTime::new(9, 0).unwrap(),
+            GameTime::new(12, 0).unwrap(),
+            GameTime::new(13, 30).unwrap(),
+            GameTime::new(1, 30).unwrap(),
             2,
-            TournamentSelection::new(RoundRobin, SingleElimination::new(false)),
             vec![Weekday::Sat],
+        );
+        let season = Season::new(
+            season_config,
+            TournamentSelection::new(RoundRobin, SingleElimination::new(false)),
         );
 
         let json = serde_json::to_string(&season).expect("serialization should succeed");
         let deserialized: Season<RoundRobin, SingleElimination> =
             serde_json::from_str(&json).expect("deserialization should succeed");
 
-        assert_eq!(season.start_day(), deserialized.start_day());
-        assert_eq!(season.end_day(), deserialized.end_day());
+        assert_eq!(season.season_config(), deserialized.season_config());
         assert_eq!(season.tournament(), deserialized.tournament());
-    }
-
-    #[test]
-    fn test_get_all_game_days() {
-        let season = Season::new(
-            Zurich.with_ymd_and_hms(2026, 5, 13, 8, 45, 0).unwrap(),
-            Zurich.with_ymd_and_hms(2026, 7, 1, 18, 0, 0).unwrap(),
-            vec![GameTime::new(9, 0).unwrap()],
-            2,
-            TournamentSelection::new(RoundRobin, SingleElimination::new(false)),
-            vec![Weekday::Sat],
-        );
-
-        let expected_days = [
-            NaiveDate::from_ymd_opt(2026, 5, 16).unwrap(),
-            NaiveDate::from_ymd_opt(2026, 5, 23).unwrap(),
-            NaiveDate::from_ymd_opt(2026, 5, 30).unwrap(),
-            NaiveDate::from_ymd_opt(2026, 6, 6).unwrap(),
-            NaiveDate::from_ymd_opt(2026, 6, 13).unwrap(),
-            NaiveDate::from_ymd_opt(2026, 6, 20).unwrap(),
-            NaiveDate::from_ymd_opt(2026, 6, 27).unwrap(),
-        ];
-
-        let computed_days = season.get_all_game_days();
-
-        assert_eq!(expected_days.len(), computed_days.len());
-
-        for i in 0..expected_days.len() {
-            assert_eq!(expected_days[i], computed_days[i]);
-        }
-    }
-
-    #[test]
-    fn test_empty_game_days() {
-        let season = Season::new(
-            Zurich.with_ymd_and_hms(2026, 5, 4, 8, 45, 0).unwrap(),
-            Zurich.with_ymd_and_hms(2026, 5, 8, 18, 0, 0).unwrap(),
-            vec![GameTime::new(9, 0).unwrap()],
-            2,
-            TournamentSelection::new(RoundRobin, SingleElimination::new(false)),
-            vec![Weekday::Sat],
-        );
-
-        let computed_days = season.get_all_game_days();
-
-        assert!(
-            computed_days.is_empty(),
-            "expected game days to be an empty list"
-        );
     }
 }
