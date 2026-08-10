@@ -11,20 +11,25 @@
     <div class="page">
       <aside class="sidebar">
         <h2>Teams</h2>
-        <button type="button" id="browse-teams">Browse teams file...</button>
+        <button type="button" id="browse-teams" data-i18n="browse-teams"></button>
         <ul id="teams-list"></ul>
 
         <div class="team-edit-controls">
-          <button type="button" id="edit-teams">Edit</button>
+          <button type="button" id="edit-teams" data-i18n="edit"></button>
           <button type="button" id="add-team" hidden>+</button>
-          <button type="button" id="save-teams" hidden>Save</button>
-          <button type="button" id="cancel-edit-teams" hidden>Cancel</button>
+          <button type="button" id="save-teams" hidden data-i18n="save"></button>
+          <button type="button" id="cancel-edit-teams" hidden data-i18n="cancel"></button>
         </div>
 
         <div id="teams-status" class="status-message"></div>
       </aside>
 
       <main class="container">
+        <select id="language-select" class="language-toggle">
+          <option value="en">English</option>
+          <option value="fr">Français</option>
+        </select>
+
         <div class="row">
           <img src="/assets/morges_bandits.png" class="logo bandits" alt="Bandits logo" />
           <h1>Organi-Bandit</h1>
@@ -32,17 +37,17 @@
         </div>
 
         <div class="field">
-          <label for="start-date">Start date</label>
+          <label for="start-date" data-i18n="start-date"></label>
           <input type="date" id="start-date" name="start-date" />
         </div>
 
         <div class="field">
-          <label for="number-fields">Number of fields</label>
+          <label for="number-fields" data-i18n="number-fields"></label>
           <input type="number" id="number-fields" name="number-fields" min="1" step="1" value="1" />
         </div>
 
         <div class="field">
-          <label for="start-time-hours">Start time</label>
+          <label for="start-time-hours" data-i18n="start-time"></label>
           <input
             type="number"
             id="start-time-hours"
@@ -50,7 +55,7 @@
             min="0"
             max="23"
             step="1"
-            placeholder="HH"
+            data-i18n-placeholder="hour-placeholder"
           />
           <span>:</span>
           <input
@@ -60,12 +65,12 @@
             min="0"
             max="59"
             step="1"
-            placeholder="MM"
+            data-i18n-placeholder="minute-placeholder"
           />
         </div>
 
         <div class="field">
-          <label for="time-between-games-hours">Time between games</label>
+          <label for="time-between-games-hours" data-i18n="time-between-games"></label>
           <input
             type="number"
             id="time-between-games-hours"
@@ -73,7 +78,7 @@
             min="0"
             max="23"
             step="1"
-            placeholder="HH"
+            data-i18n-placeholder="hour-placeholder"
           />
           <span>:</span>
           <input
@@ -83,12 +88,12 @@
             min="0"
             max="59"
             step="1"
-            placeholder="MM"
+            data-i18n-placeholder="minute-placeholder"
           />
         </div>
 
         <div class="field">
-          <label for="start-break-hours">Start break</label>
+          <label for="start-break-hours" data-i18n="start-break"></label>
           <input
             type="number"
             id="start-break-hours"
@@ -96,7 +101,7 @@
             min="0"
             max="23"
             step="1"
-            placeholder="HH"
+            data-i18n-placeholder="hour-placeholder"
           />
           <span>:</span>
           <input
@@ -106,12 +111,12 @@
             min="0"
             max="59"
             step="1"
-            placeholder="MM"
+            data-i18n-placeholder="minute-placeholder"
           />
         </div>
 
         <div class="field">
-          <label for="end-break-hours">End break</label>
+          <label for="end-break-hours" data-i18n="end-break"></label>
           <input
             type="number"
             id="end-break-hours"
@@ -119,7 +124,7 @@
             min="0"
             max="23"
             step="1"
-            placeholder="HH"
+            data-i18n-placeholder="hour-placeholder"
           />
           <span>:</span>
           <input
@@ -129,36 +134,36 @@
             min="0"
             max="59"
             step="1"
-            placeholder="MM"
+            data-i18n-placeholder="minute-placeholder"
           />
         </div>
 
         <fieldset class="game-days">
-          <legend>Game days</legend>
+          <legend data-i18n="game-days"></legend>
           <div class="day-options">
-            <label><input type="checkbox" name="game-days" value="Mon" /> Monday</label>
-            <label><input type="checkbox" name="game-days" value="Tue" /> Tuesday</label>
-            <label><input type="checkbox" name="game-days" value="Wed" /> Wednesday</label>
-            <label><input type="checkbox" name="game-days" value="Thu" /> Thursday</label>
-            <label><input type="checkbox" name="game-days" value="Fri" /> Friday</label>
-            <label><input type="checkbox" name="game-days" value="Sat" /> Saturday</label>
-            <label><input type="checkbox" name="game-days" value="Sun" /> Sunday</label>
+            <label><input type="checkbox" name="game-days" value="Mon" /> <span data-i18n="day-monday"></span></label>
+            <label><input type="checkbox" name="game-days" value="Tue" /> <span data-i18n="day-tuesday"></span></label>
+            <label><input type="checkbox" name="game-days" value="Wed" /> <span data-i18n="day-wednesday"></span></label>
+            <label><input type="checkbox" name="game-days" value="Thu" /> <span data-i18n="day-thursday"></span></label>
+            <label><input type="checkbox" name="game-days" value="Fri" /> <span data-i18n="day-friday"></span></label>
+            <label><input type="checkbox" name="game-days" value="Sat" /> <span data-i18n="day-saturday"></span></label>
+            <label><input type="checkbox" name="game-days" value="Sun" /> <span data-i18n="day-sunday"></span></label>
           </div>
         </fieldset>
 
         <div class="field">
-          <label for="output-folder">Output folder</label>
+          <label for="output-folder" data-i18n="output-folder"></label>
           <input
             type="text"
             id="output-folder"
             name="output-folder"
             readonly
-            placeholder="Select a folder..."
+            data-i18n-placeholder="output-folder-placeholder"
           />
-          <button type="button" id="browse-output-folder">Browse...</button>
+          <button type="button" id="browse-output-folder" data-i18n="browse-output-folder"></button>
         </div>
 
-        <button type="button" id="generate-schedule">Generate schedule</button>
+        <button type="button" id="generate-schedule" data-i18n="generate-schedule"></button>
 
         <div id="status-message" class="status-message"></div>
       </main>

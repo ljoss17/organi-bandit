@@ -3,6 +3,49 @@ let outputDirectoryPath = "";
 let currentTeamsFilePath = "resources/teams.json";
 let editedTeams = null;
 
+function applyTranslations(dict) {
+  document.querySelectorAll("[data-i18n]").forEach((element) => {
+    const key = element.getAttribute("data-i18n");
+    const translated = dict[key];
+    if (translated === undefined) {
+      console.warn(`Missing translation for key "${key}"`);
+      return;
+    }
+    element.textContent = translated;
+  });
+
+  document.querySelectorAll("[data-i18n-placeholder]").forEach((element) => {
+    const key = element.getAttribute("data-i18n-placeholder");
+    const translated = dict[key];
+    if (translated === undefined) {
+      console.warn(`Missing translation for key "${key}"`);
+      return;
+    }
+    element.placeholder = translated;
+  });
+}
+
+let currentLanguage = "en";
+let currentTranslations = {};
+
+async function loadTranslations(language) {
+  try {
+    const response = await fetch(`locales/strings/${language}.json`);
+    currentTranslations = await response.json();
+    currentLanguage = language;
+    applyTranslations(currentTranslations);
+    document.getElementById("language-select").value = currentLanguage;
+  } catch (error) {
+    console.error(`Failed to load translations for "${language}":`, error);
+  }
+}
+
+loadTranslations(currentLanguage);
+
+document.getElementById("language-select").addEventListener("change", (event) => {
+  loadTranslations(event.target.value);
+});
+
 function setTeamsStatus(message, isError) {
   const teamsStatus = document.getElementById("teams-status");
   teamsStatus.textContent = message;
