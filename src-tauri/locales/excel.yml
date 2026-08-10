@@ -1,0 +1,22 @@
+_version: 2
+bye:
+  en: "Bye"
+  fr: "Bye"
+day:
+  en: "Day %{day_index}: %{day} %{month} %{year}"
+  fr: "Jour %{day_index} : %{day} %{month} %{year}"
+time:
+  en: "Time"
+  fr: "Horaire"
+home:
+  en: "Home"
+  fr: "Domicile"
+vs:
+  en: "VS"
+  fr: "VS"
+away:
+  en: "Away"
+  fr: "Visiteur"
+referee:
+  en: "Referee"
+  fr: "Arbitre"

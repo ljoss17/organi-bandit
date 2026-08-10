@@ -1,5 +1,6 @@
 use chrono::{DateTime, Datelike};
 use chrono_tz::Tz;
+use rust_i18n::t;
 use rust_xlsxwriter::workbook::Workbook;
 use rust_xlsxwriter::worksheet::Worksheet;
 use rust_xlsxwriter::{Color, Format, FormatAlign, FormatBorder};
@@ -30,6 +31,7 @@ pub fn generate_excel_schedule(
     schedule: Vec<Game>,
     number_fields: u16,
     output_directory_path: String,
+    language: &str,
 ) -> Result<(), AppError> {
     // Create a new Excel file object.
     let mut workbook = Workbook::new();
@@ -51,17 +53,17 @@ pub fn generate_excel_schedule(
     worksheet.set_column_width(2, 4)?;
     worksheet.set_column_width(7, 4)?;
 
-    let mut day_index = 0;
+    let mut day_index = 1;
 
     for game in sorted_schedule.iter() {
         let game_day = game.get_game_day();
         if game_day.date_naive() != current_day {
             row += 2;
-            write_day_row(worksheet, row, game_day, day_index)?;
+            write_day_row(worksheet, row, game_day, day_index, language)?;
             day_index += 1;
             current_day = game_day.date_naive();
             row += 1;
-            write_header_row(worksheet, row, 2)?;
+            write_header_row(worksheet, row, 2, language)?;
             row += 1;
             current_games = 0;
         } else if current_time != Some(game_day.time()) {
@@ -75,7 +77,7 @@ pub fn generate_excel_schedule(
             continue;
         }
 
-        write_game_row(worksheet, game, row, current_games)?;
+        write_game_row(worksheet, game, row, current_games, language)?;
         current_games += 1;
     }
     let current_date = chrono::Utc::now();
@@ -85,7 +87,9 @@ pub fn generate_excel_schedule(
 
     // Save the file to disk.
     //workbook.save(format!("calendrier_{year}.xlsx"))?;
-    workbook.save(format!("{output_directory_path}/calendrier_{year}.xlsx"))?;
+    workbook.save(format!(
+        "{output_directory_path}/calendrier_{year}_{language}.xlsx"
+    ))?;
     Ok(())
 }
 
@@ -94,6 +98,7 @@ fn write_day_row(
     row: u32,
     game_day: &DateTime<Tz>,
     day_index: u32,
+    language: &str,
 ) -> Result<(), AppError> {
     let day = game_day.day();
     let month = game_day.month();
@@ -111,7 +116,14 @@ fn write_day_row(
         0,
         row,
         10,
-        &format!("Day {day_index}: {day} {} {year}", month_str.name()),
+        &t!(
+            "day",
+            locale = language,
+            day_index = day_index,
+            day = day,
+            month = month_str.name(),
+            year = year
+        ),
         &title_format,
     )?;
     worksheet.set_row_height(row, 25)?;
@@ -122,6 +134,7 @@ fn write_header_row(
     worksheet: &mut Worksheet,
     row: u32,
     number_fields: u16,
+    language: &str,
 ) -> Result<(), AppError> {
     let format = Format::new()
         .set_align(FormatAlign::Center)
@@ -129,13 +142,18 @@ fn write_header_row(
         .set_border(FormatBorder::Thin)
         .set_background_color(Color::Silver);
     for i in 0..number_fields {
-        worksheet.write_with_format(row, 5 * i, "Horaire", &format)?;
-        worksheet.write_with_format(row, 5 * i + 1, "Domicile", &format)?;
-        worksheet.write_with_format(row, 5 * i + 2, "VS", &format)?;
-        worksheet.write_with_format(row, 5 * i + 3, "Visiteur", &format)?;
-        worksheet.write_with_format(row, 5 * i + 4, "Arbitre", &format)?;
+        worksheet.write_with_format(row, 5 * i, t!("time", locale = language), &format)?;
+        worksheet.write_with_format(row, 5 * i + 1, t!("home", locale = language), &format)?;
+        worksheet.write_with_format(row, 5 * i + 2, t!("vs", locale = language), &format)?;
+        worksheet.write_with_format(row, 5 * i + 3, t!("away", locale = language), &format)?;
+        worksheet.write_with_format(row, 5 * i + 4, t!("referee", locale = language), &format)?;
     }
-    worksheet.write_with_format(row, number_fields * 5, "Bye", &format)?;
+    worksheet.write_with_format(
+        row,
+        number_fields * 5,
+        t!("bye", locale = language),
+        &format,
+    )?;
     worksheet.set_row_height(row, 18)?;
     Ok(())
 }
@@ -145,6 +163,7 @@ fn write_game_row(
     game: &Game,
     row: u32,
     offset: u16,
+    language: &str,
 ) -> Result<(), AppError> {
     let format_team = Format::new()
         .set_align(FormatAlign::Center)
@@ -168,7 +187,7 @@ fn write_game_row(
         game.get_home_team().get_name(),
         &format_team,
     )?;
-    worksheet.write_with_format(row, 2 + offset * 5, "VS", &format_vs)?;
+    worksheet.write_with_format(row, 2 + offset * 5, t!("vs", locale = language), &format_vs)?;
     worksheet.write_with_format(
         row,
         3 + offset * 5,

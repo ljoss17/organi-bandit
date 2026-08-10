@@ -10,6 +10,8 @@ pub mod traits;
 pub mod types;
 pub mod utils;
 
+rust_i18n::i18n!("locales", fallback = "en");
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()

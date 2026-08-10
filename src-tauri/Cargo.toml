@@ -21,6 +21,7 @@ tauri-build = { version = "2", features = [  ] }
 chrono              = { version = "0.4.45", features = [ "serde" ] }
 chrono-tz           = "0.10.4"
 rand                = "0.10.2"
+rust-i18n           = "4.2.1"
 rust_xlsxwriter     = "0.97.0"
 serde               = { version = "1", features = [ "derive" ] }
 serde_derive        = "1.0.229"

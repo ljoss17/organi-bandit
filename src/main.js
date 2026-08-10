@@ -28,6 +28,15 @@ function applyTranslations(dict) {
 let currentLanguage = "en";
 let currentTranslations = {};
 
+function t(key) {
+  const translated = currentTranslations[key];
+  if (translated === undefined) {
+    console.warn(`Missing translation for key "${key}"`);
+    return key;
+  }
+  return translated;
+}
+
 async function loadTranslations(language) {
   try {
     const response = await fetch(`locales/strings/${language}.json`);
@@ -265,9 +274,10 @@ document.getElementById("generate-schedule").addEventListener("click", async () 
       schedule,
       numberFields,
       outputDirectoryPath,
+      language: currentLanguage,
     });
 
-    statusMessage.textContent = "Success";
+    statusMessage.textContent = t("success");
     statusMessage.classList.add("success");
   } catch (error) {
     console.error(error);
