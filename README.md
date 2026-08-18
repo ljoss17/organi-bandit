@@ -1,46 +1,75 @@
 # Organi-Bandit
 
-A desktop application that generates a flag football season schedule as a spreadsheet. Given a list of teams and a few scheduling parameters, it produces a `.xlsx` file listing every game of the season — round-robin group stage followed by a single-elimination playoff.
+A desktop application that generates a flag football season schedule as a spreadsheet. Configure your teams and a few scheduling parameters, and it produces a `.xlsx` file listing every game of the season — a round-robin group stage followed by a single-elimination playoff.
 
 ## What it does
 
-- Reads the list of teams from a `.txt` file (one team name per line)
-- Lets you configure the season through a desktop UI:
-  - Start and end date
-  - Number of bye weeks per team
-  - Game days (e.g. Saturday, Sunday)
-  - Maximum number of concurrent games (number of fields)
-  - Number of sequential games per day (e.g. 2 for morning/afternoon)
-- Generates a full round-robin group stage, followed by a single-elimination playoff bracket
-- Exports the complete schedule to a `.xlsx` spreadsheet with a single click
-
-The UI is in French.
+- **Team management** — browse to a `teams.json` file, and add, rename, re-seed, or remove teams directly in the app. Saving writes the changes back to the same file.
+- **Season configuration**, set through the desktop UI:
+  - Start date and which weekdays count as game days
+  - Number of fields (how many games can run at the same time)
+  - Start time, time between games, and a start/end break window (e.g. a lunch break with no games scheduled)
+- **Round-robin group stage** — every team plays every other team twice (once as home, once as away), with a bye week for one team per round when the team count is odd, and a referee automatically assigned to each game from the teams not already playing that time slot.
+- **Single-elimination playoffs** — the top 8 teams from the group stage advance to a knockout bracket.
+- **Excel export** — the full schedule (group stage and playoffs) is written to a `.xlsx` file in a folder you choose.
+- **English and French UI**, switchable at runtime — the exported spreadsheet's own labels (column headers, day titles) follow whichever language is selected.
 
 ## Tech stack
 
-- **Rust** — application logic
-- **Tauri** — desktop UI shell
-- **chrono** — date and weekday handling
+- **Rust** — application and scheduling logic
+- **Tauri 2** — desktop shell, wrapping a plain HTML/CSS/JS frontend (no bundler or framework)
+- **chrono** / **chrono-tz** — date, weekday, and timezone handling
 - **rust_xlsxwriter** — spreadsheet generation
+- **rust-i18n** — translated labels in the generated spreadsheet
+- **tauri-plugin-dialog** — native file and folder pickers
 
 ## Status
 
-This README describes the initial working version (MVP) only. Features such as editable team/restricted-day lists, additional tournament formats, multi-language support, and CSV export are planned but not yet part of this version.
+Round-robin and single-elimination are currently the only supported tournament formats, and there's no CSV export — only `.xlsx`. Contributions adding either are welcome.
 
 ## Getting started
 
+Requires a recent [Rust toolchain](https://www.rust-lang.org/tools/install) and the [Tauri CLI](https://tauri.app/):
+
 ```bash
-cargo install create-tauri-app --locked
-cargo create-tauri-app
-cd <project-name>
 cargo install tauri-cli --version "^2.0.0" --locked
+```
+
+Tauri's Linux backend depends on WebKitGTK. On Debian/Ubuntu, install the system packages it needs before building:
+
+```bash
+sudo apt-get update
+sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev
+```
+
+(On other platforms, see [Tauri's own prerequisites guide](https://v2.tauri.app/start/prerequisites/).)
+
+Then, from the repository root:
+
+```bash
+git clone https://github.com/ljoss17/organi-bandit.git
+cd organi-bandit
 cargo tauri dev
 ```
 
 ## Input files
 
-- **Teams** — a `.txt` file with one team name per line.
+Teams are read from a JSON file — one object per team, with an optional seed used to arrange the single-elimination bracket:
+
+```json
+[
+  { "name": "Riviera Saints", "seed": null },
+  { "name": "Fribourg Cardinals", "seed": null },
+  { "name": "Morges Bandits", "seed": null }
+]
+```
+
+A sample file is included at `src-tauri/resources/teams.json`. The app can also browse to and edit any other file in this format directly from its Teams panel.
 
 ## Output
 
-- A `.xlsx` file listing all games of the season (group stage and playoffs) with date, time, field, and matchup for each game.
+A `.xlsx` file listing every game of the season — group stage and playoffs — with date, time, field, matchup, and assigned referee for each game, saved to the folder you select before generating.
+
+## License
+
+Licensed under either of [MIT](LICENSE-MIT) or [Apache License, Version 2.0](LICENSE-APACHE) at your option.
