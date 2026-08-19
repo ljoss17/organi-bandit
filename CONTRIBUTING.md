@@ -19,6 +19,8 @@ If you're adding a new piece of user-facing text, check which of these two syste
 
 Every PR should link to an issue describing the bug or feature it addresses (open one first if it doesn't exist yet). Issues, not PRs, are what the changelog references, so this keeps that history readable.
 
+If the change is user-facing, add a changelog fragment describing it. See [changelog.d/README.md](changelog.d/README.md) for the format.
+
 CI runs `cargo fmt`, `cargo clippy`, and `cargo test` on every PR. Running them locally first saves a round-trip:
 
 ```bash

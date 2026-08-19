@@ -1,0 +1,20 @@
+[tool.towncrier]
+name = "Organi-Bandit"
+directory = "changelog.d"
+filename = "CHANGELOG.md"
+issue_format = "#{issue}"
+
+[[tool.towncrier.type]]
+directory = "feature"
+name = "Added"
+showcontent = true
+
+[[tool.towncrier.type]]
+directory = "bugfix"
+name = "Fixed"
+showcontent = true
+
+[[tool.towncrier.type]]
+directory = "change"
+name = "Changed"
+showcontent = true

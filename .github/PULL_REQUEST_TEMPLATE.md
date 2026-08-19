@@ -12,3 +12,4 @@ ______
 - [ ] Ran fmt/clippy/test locally
 - [ ] Added tests
 - [ ] Linked to GitHub issue.
+- [ ] Added changelog fragment (if user-facing).
