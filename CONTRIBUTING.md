@@ -17,6 +17,8 @@ If you're adding a new piece of user-facing text, check which of these two syste
 
 ## Before opening a PR
 
+Every PR should link to an issue describing the bug or feature it addresses (open one first if it doesn't exist yet). Issues, not PRs, are what the changelog references, so this keeps that history readable.
+
 CI runs `cargo fmt`, `cargo clippy`, and `cargo test` on every PR. Running them locally first saves a round-trip:
 
 ```bash
