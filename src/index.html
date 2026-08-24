@@ -25,10 +25,13 @@
       </aside>
 
       <main class="container">
-        <select id="language-select" class="language-toggle">
-          <option value="en">English</option>
-          <option value="fr">Français</option>
-        </select>
+        <div class="top-bar">
+          <button type="button" id="show-changelog" class="changelog-toggle" data-i18n="changelog-button"></button>
+          <select id="language-select" class="language-toggle">
+            <option value="en">English</option>
+            <option value="fr">Français</option>
+          </select>
+        </div>
 
         <div class="row">
           <img src="/assets/morges_bandits.png" class="logo bandits" alt="Bandits logo" />
@@ -167,6 +170,14 @@
 
         <div id="status-message" class="status-message"></div>
       </main>
+    </div>
+
+    <div id="changelog-modal" class="modal" hidden>
+      <div class="modal-content">
+        <button type="button" id="close-changelog" class="modal-close">&times;</button>
+        <h2 data-i18n="changelog-title"></h2>
+        <div id="changelog-body"></div>
+      </div>
     </div>
 
     <script type="module" src="main.js"></script>

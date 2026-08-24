@@ -65,6 +65,80 @@ async function checkForUpdate() {
 
 checkForUpdate();
 
+function parseChangelog(markdown) {
+  const versions = [];
+  let currentVersion = null;
+  let currentCategory = null;
+
+  markdown.split("\n").forEach((line) => {
+    const versionMatch = line.match(/^## \[(.+?)\] - (.+)$/);
+    if (versionMatch) {
+      currentVersion = { version: versionMatch[1], date: versionMatch[2], categories: [] };
+      versions.push(currentVersion);
+      currentCategory = null;
+      return;
+    }
+
+    const categoryMatch = line.match(/^### (.+)$/);
+    if (categoryMatch && currentVersion) {
+      currentCategory = { name: categoryMatch[1], entries: [] };
+      currentVersion.categories.push(currentCategory);
+      return;
+    }
+
+    const entryMatch = line.match(/^- (.+)$/);
+    if (entryMatch && currentCategory) {
+      currentCategory.entries.push(entryMatch[1]);
+    }
+  });
+
+  return versions;
+}
+
+function renderChangelog(versions) {
+  const container = document.getElementById("changelog-body");
+  container.innerHTML = "";
+
+  versions.forEach((version) => {
+    const versionElement = document.createElement("div");
+    versionElement.className = "changelog-version";
+
+    const heading = document.createElement("h3");
+    heading.textContent = `${version.version} (${version.date})`;
+    versionElement.appendChild(heading);
+
+    version.categories.forEach((category) => {
+      const categoryHeading = document.createElement("h4");
+      categoryHeading.textContent = category.name;
+      versionElement.appendChild(categoryHeading);
+
+      const list = document.createElement("ul");
+      category.entries.forEach((entry) => {
+        const item = document.createElement("li");
+        item.textContent = entry;
+        list.appendChild(item);
+      });
+      versionElement.appendChild(list);
+    });
+
+    container.appendChild(versionElement);
+  });
+}
+
+document.getElementById("show-changelog").addEventListener("click", async () => {
+  try {
+    const raw = await window.__TAURI__.core.invoke("read_changelog");
+    renderChangelog(parseChangelog(raw).slice(0, 3));
+  } catch (error) {
+    console.error("Failed to load changelog:", error);
+  }
+  document.getElementById("changelog-modal").hidden = false;
+});
+
+document.getElementById("close-changelog").addEventListener("click", () => {
+  document.getElementById("changelog-modal").hidden = true;
+});
+
 document.getElementById("language-select").addEventListener("change", (event) => {
   loadTranslations(event.target.value);
 });

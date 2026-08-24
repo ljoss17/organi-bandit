@@ -1,8 +1,20 @@
 use std::fs;
 use std::path::Path;
 
+use tauri::path::BaseDirectory;
+use tauri::{AppHandle, Manager};
+
 use crate::errors::AppError;
 use crate::types::team::Team;
+
+#[tauri::command]
+pub fn read_changelog(app_handle: AppHandle) -> Result<String, AppError> {
+    let changelog_path = app_handle
+        .path()
+        .resolve("CHANGELOG.md", BaseDirectory::Resource)?;
+    let content = fs::read_to_string(changelog_path)?;
+    Ok(content)
+}
 
 #[tauri::command]
 pub fn read_team_list(file_path: &Path) -> Result<Vec<Team>, AppError> {

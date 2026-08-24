@@ -36,6 +36,8 @@ pub enum AppError {
     ParseIntError(#[from] TryFromIntError),
     #[error("no eligible teams to referee")]
     EmptyEligibleReferees,
+    #[error("failed to resolve resource path")]
+    ResourceResolveError(#[from] tauri::Error),
 }
 
 impl Serialize for AppError {

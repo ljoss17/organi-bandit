@@ -1,7 +1,7 @@
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
 
 use crate::commands::{generate_excel_schedule, tauri_generate_schedule};
-use crate::utils::parser::{read_team_list, write_team_list};
+use crate::utils::parser::{read_changelog, read_team_list, write_team_list};
 
 pub mod commands;
 pub mod errors;
@@ -21,6 +21,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             read_team_list,
             write_team_list,
+            read_changelog,
             tauri_generate_schedule,
             generate_excel_schedule
         ])
