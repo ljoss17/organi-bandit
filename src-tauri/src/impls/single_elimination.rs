@@ -21,15 +21,10 @@ impl Tournament for SingleElimination {
         "Single Elimination".to_owned()
     }
 
-    fn validate_parameters(
-        &self,
-        _teams: &[Team],
-        _start_date: &NaiveDate,
-        _start_time: &GameTime,
-        _time_between_games: &GameTime,
-    ) -> Result<(), AppError> {
-        //self.validate_tournament_duration(teams, game_days, max_games_per_day)
-
+    fn validate_parameters(&self, teams: &[Team]) -> Result<(), AppError> {
+        if teams.len() < 2 {
+            return Err(AppError::NotEnoughTeams(teams.len(), 2));
+        }
         Ok(())
     }
 
@@ -41,12 +36,7 @@ impl Tournament for SingleElimination {
         season_config: &SeasonConfig,
         _with_referees: bool,
     ) -> Result<Vec<Game>, AppError> {
-        self.validate_parameters(
-            teams,
-            start_date,
-            season_config.start_time(),
-            season_config.time_between_games(),
-        )?;
+        self.validate_parameters(teams)?;
         let number_of_teams = teams.len();
         let bracket_size = number_of_teams.next_power_of_two();
         let number_of_byes = bracket_size - number_of_teams;
@@ -231,6 +221,24 @@ mod tests {
 
     #[test]
     fn test_single_elimination_valid_parameter_validation_1() {
+        let single_elimination = SingleElimination::new(false);
+
+        let result = single_elimination.validate_parameters(&teams());
+
+        assert!(result.is_ok(), "passed parameters should be valid");
+    }
+
+    #[test]
+    fn test_single_elimination_parameter_validation_rejects_too_few_teams() {
+        let single_elimination = SingleElimination::new(false);
+
+        let result = single_elimination.validate_parameters(&[Team::new("Solo Team", None)]);
+
+        assert!(matches!(result, Err(AppError::NotEnoughTeams(1, 2))));
+    }
+
+    #[test]
+    fn compute_schedule_rejects_empty_teams() {
         let season_config = SeasonConfig::new(
             start_date(),
             GameTime::new(9, 0).unwrap(),
@@ -241,38 +249,21 @@ mod tests {
             vec![Weekday::Sat],
         );
 
-        let single_elimination = SingleElimination::new(false);
-
-        let result = single_elimination.validate_parameters(
-            &teams(),
-            season_config.start_date(),
-            season_config.start_time(),
-            season_config.time_between_games(),
+        let result = SingleElimination::new(false).compute_schedule(
+            &[],
+            &start_date(),
+            &season_config,
+            false,
         );
 
-        assert!(result.is_ok(), "passed parameters should be valid");
+        assert!(matches!(result, Err(AppError::NotEnoughTeams(0, 2))));
     }
 
     #[test]
     fn test_single_elimination_valid_parameter_validation_2() {
-        let season_config = SeasonConfig::new(
-            start_date(),
-            GameTime::new(9, 0).unwrap(),
-            GameTime::new(12, 0).unwrap(),
-            GameTime::new(13, 30).unwrap(),
-            GameTime::new(1, 30).unwrap(),
-            2,
-            vec![Weekday::Sat],
-        );
-
         let single_elimination = SingleElimination::new(false);
 
-        let result = single_elimination.validate_parameters(
-            &teams(),
-            season_config.start_date(),
-            season_config.start_time(),
-            season_config.time_between_games(),
-        );
+        let result = single_elimination.validate_parameters(&teams());
 
         assert!(result.is_ok(), "passed parameters should be valid");
     }

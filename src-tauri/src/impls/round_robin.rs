@@ -8,7 +8,6 @@ use serde::{Deserialize, Serialize};
 use crate::errors::AppError;
 use crate::traits::tournament::Tournament;
 use crate::types::game::Game;
-use crate::types::game_time::GameTime;
 use crate::types::season::SeasonConfig;
 use crate::types::team::Team;
 use crate::utils::game_day_scheduler::GameDayScheduler;
@@ -22,14 +21,10 @@ impl Tournament for RoundRobin {
         "Round Robin".to_owned()
     }
 
-    fn validate_parameters(
-        &self,
-        _teams: &[Team],
-        _start_date: &NaiveDate,
-        _start_time: &GameTime,
-        _time_between_games: &GameTime,
-    ) -> Result<(), AppError> {
-        //self.validate_tournament_duration(teams, game_days, max_games_per_day)
+    fn validate_parameters(&self, teams: &[Team]) -> Result<(), AppError> {
+        if teams.len() < 2 {
+            return Err(AppError::NotEnoughTeams(teams.len(), 2));
+        }
         Ok(())
     }
 
@@ -41,12 +36,7 @@ impl Tournament for RoundRobin {
         with_referees: bool,
     ) -> Result<Vec<Game>, AppError> {
         // Validate parameters
-        self.validate_parameters(
-            teams,
-            start_date,
-            season_config.start_time(),
-            season_config.time_between_games(),
-        )?;
+        self.validate_parameters(teams)?;
 
         let mut rng = rand::rng();
         let mut inner_teams = teams.to_vec();
@@ -218,6 +208,24 @@ mod tests {
 
     #[test]
     fn test_round_robin_parameter_validation_1() {
+        let round_robin = RoundRobin;
+
+        let result = round_robin.validate_parameters(&teams());
+
+        assert!(result.is_ok(), "passed parameters are not valid");
+    }
+
+    #[test]
+    fn test_round_robin_parameter_validation_rejects_too_few_teams() {
+        let round_robin = RoundRobin;
+
+        let result = round_robin.validate_parameters(&[Team::new("Solo Team", None)]);
+
+        assert!(matches!(result, Err(AppError::NotEnoughTeams(1, 2))));
+    }
+
+    #[test]
+    fn compute_schedule_rejects_empty_teams() {
         let season_config = SeasonConfig::new(
             start_date(),
             GameTime::new(9, 0).unwrap(),
@@ -228,38 +236,16 @@ mod tests {
             vec![Weekday::Sat],
         );
 
-        let round_robin = RoundRobin;
+        let result = RoundRobin.compute_schedule(&[], &start_date(), &season_config, false);
 
-        let result = round_robin.validate_parameters(
-            &teams(),
-            season_config.start_date(),
-            season_config.start_time(),
-            season_config.time_between_games(),
-        );
-
-        assert!(result.is_ok(), "passed parameters are not valid");
+        assert!(matches!(result, Err(AppError::NotEnoughTeams(0, 2))));
     }
 
     #[test]
     fn test_round_robin_parameter_validation_2() {
-        let season_config = SeasonConfig::new(
-            start_date(),
-            GameTime::new(9, 0).unwrap(),
-            GameTime::new(12, 0).unwrap(),
-            GameTime::new(13, 30).unwrap(),
-            GameTime::new(1, 30).unwrap(),
-            2,
-            vec![Weekday::Sat],
-        );
-
         let round_robin = RoundRobin;
 
-        let result = round_robin.validate_parameters(
-            &teams(),
-            season_config.start_date(),
-            season_config.start_time(),
-            season_config.time_between_games(),
-        );
+        let result = round_robin.validate_parameters(&teams());
 
         assert!(result.is_ok(), "passed parameters are not valid");
     }

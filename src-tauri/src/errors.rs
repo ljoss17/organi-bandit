@@ -21,7 +21,7 @@ pub enum AppError {
     WeekdayParseError(#[from] ParseWeekdayError),
     #[error("failed to find game")]
     MissingGame,
-    #[error("not enough teams. Got {0}, require at leasts {1}")]
+    #[error("not enough teams. Got {0}, require at least {1}")]
     NotEnoughTeams(usize, usize),
     #[error("{0} is too short. Game days {1}, required game days {2}")]
     TournamentTooShort(String, usize, usize),
