@@ -65,8 +65,8 @@ impl Tournament for RoundRobin {
             game_day_scheduler.advance();
             game_time_scheduler.reset();
 
+            // Leg 1: this round's pairing.
             let mut bye_pair = None;
-
             for i in 0..(number_teams / 2) {
                 let game_time = *game_time_scheduler.current_time();
                 let home_team = inner_teams[i].clone();
@@ -83,7 +83,7 @@ impl Tournament for RoundRobin {
                 }
             }
 
-            let mut leg2_teams = inner_teams
+            let leg2_teams = inner_teams
                 .iter()
                 .filter(|team| match &bye_pair {
                     Some((a, b)) => *team != a && *team != b,
@@ -91,19 +91,15 @@ impl Tournament for RoundRobin {
                 })
                 .cloned()
                 .collect::<Vec<_>>();
-
-            if leg2_teams.len() >= 2 {
-                Self::rotate_teams(&mut leg2_teams);
-                let leg2_count = leg2_teams.len();
-                for i in 0..(leg2_count / 2) {
-                    let game_time = *game_time_scheduler.current_time();
-                    let home_team = leg2_teams[i].clone();
-                    let away_team = leg2_teams[leg2_count - 1 - i].clone();
-                    let game =
-                        Game::new_with_game_day(home_team, away_team, game_day, game_time, None)?;
-                    schedule.push(game);
-                    game_time_scheduler.try_advance();
-                }
+            let leg2_count = leg2_teams.len();
+            for i in 0..(leg2_count / 2) {
+                let game_time = *game_time_scheduler.current_time();
+                let home_team = leg2_teams[i].clone();
+                let away_team = leg2_teams[leg2_count - 1 - i].clone();
+                let game =
+                    Game::new_with_game_day(home_team, away_team, game_day, game_time, None)?;
+                schedule.push(game);
+                game_time_scheduler.try_advance();
             }
 
             Self::rotate_teams(&mut inner_teams);
@@ -358,6 +354,69 @@ mod tests {
         assert_schedule(&schedule, &teams, season_config.number_fields());
     }
 
+    #[test]
+    fn test_even_team_count_no_bye_needed() {
+        let teams = [
+            Team::new("A", None),
+            Team::new("B", None),
+            Team::new("C", None),
+            Team::new("D", None),
+            Team::new("E", None),
+            Team::new("F", None),
+        ];
+        let season_config = SeasonConfig::new(
+            start_date(),
+            GameTime::new(9, 0).unwrap(),
+            GameTime::new(12, 0).unwrap(),
+            GameTime::new(20, 0).unwrap(),
+            GameTime::new(1, 30).unwrap(),
+            3,
+            vec![Weekday::Wed, Weekday::Sat],
+        );
+
+        let schedule = RoundRobin
+            .compute_schedule(&teams, season_config.start_date(), &season_config, false)
+            .unwrap();
+
+        // No bye is needed for an even team count, so every game is a real
+        // pairing: N * (N - 1) total, every pair meeting exactly twice.
+        assert_eq!(schedule.len(), teams.len() * (teams.len() - 1));
+        assert!(
+            schedule
+                .iter()
+                .all(|game| game.get_home_team().get_name() != "Bye"
+                    && game.get_away_team().get_name() != "Bye"),
+            "an even team count should never need a bye game"
+        );
+
+        let mut pair_counts: HashMap<(String, String), u32> = HashMap::new();
+        for game in schedule.iter() {
+            let mut names = [
+                game.get_home_team().get_name().to_owned(),
+                game.get_away_team().get_name().to_owned(),
+            ];
+            names.sort();
+            *pair_counts
+                .entry((names[0].clone(), names[1].clone()))
+                .or_insert(0) += 1;
+        }
+        for i in 0..teams.len() {
+            for j in (i + 1)..teams.len() {
+                let mut names = [
+                    teams[i].get_name().to_owned(),
+                    teams[j].get_name().to_owned(),
+                ];
+                names.sort();
+                let key = (names[0].clone(), names[1].clone());
+                assert_eq!(
+                    pair_counts.get(&key).copied().unwrap_or(0),
+                    2,
+                    "pair {key:?} should meet exactly twice"
+                );
+            }
+        }
+    }
+
     fn assert_schedule(schedule: &[Game], teams: &[Team], number_of_fields: u32) {
         let all_unique_teams = HashSet::<String>::from_iter(
             teams
@@ -439,5 +498,37 @@ mod tests {
             "All game days should have a maximum of '{}' games per date/time",
             number_of_fields
         );
+
+        // Every unique real (non-bye) pair should face each other exactly
+        // twice across the season, no pair skipped, none repeated unevenly.
+        let mut pair_counts: HashMap<(String, String), u32> = HashMap::new();
+        for game in schedule.iter() {
+            let home_team = game.get_home_team();
+            let away_team = game.get_away_team();
+            if home_team.get_name() == "Bye" || away_team.get_name() == "Bye" {
+                continue;
+            }
+            let mut names = [
+                home_team.get_name().to_owned(),
+                away_team.get_name().to_owned(),
+            ];
+            names.sort();
+            let key = (names[0].clone(), names[1].clone());
+            *pair_counts.entry(key).or_insert(0) += 1;
+        }
+
+        for i in 0..only_unique_teams.len() {
+            for j in (i + 1)..only_unique_teams.len() {
+                let mut names = [only_unique_teams[i].clone(), only_unique_teams[j].clone()];
+                names.sort();
+                let key = (names[0].clone(), names[1].clone());
+                assert_eq!(
+                    pair_counts.get(&key).copied().unwrap_or(0),
+                    2,
+                    "pair {key:?} should meet exactly twice, met {:?} times",
+                    pair_counts.get(&key)
+                );
+            }
+        }
     }
 }
