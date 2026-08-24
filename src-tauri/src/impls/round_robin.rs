@@ -58,7 +58,7 @@ impl Tournament for RoundRobin {
 
         let mut schedule = vec![];
 
-        let mut game_day_scheduler = GameDayScheduler::new(start_date, season_config.game_days());
+        let mut game_day_scheduler = GameDayScheduler::new(start_date, season_config.game_days())?;
         let mut game_time_scheduler = GameTimeScheduler::new(
             season_config.start_time(),
             season_config.time_between_games(),

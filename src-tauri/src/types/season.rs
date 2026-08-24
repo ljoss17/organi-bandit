@@ -112,7 +112,7 @@ where
             .date_naive();
 
         let mut game_day_scheduler =
-            GameDayScheduler::new(&last_group_stage_day, self.season_config().game_days());
+            GameDayScheduler::new(&last_group_stage_day, self.season_config().game_days())?;
         game_day_scheduler.advance();
 
         // Note: Currently playoffs are fixed to quarter finales -> finals

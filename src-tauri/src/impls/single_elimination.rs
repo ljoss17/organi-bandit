@@ -69,7 +69,7 @@ impl Tournament for SingleElimination {
         inner_teams.reserve(number_of_byes);
 
         let mut schedule = Vec::with_capacity(bracket_size - 1);
-        let mut game_day_scheduler = GameDayScheduler::new(start_date, season_config.game_days());
+        let mut game_day_scheduler = GameDayScheduler::new(start_date, season_config.game_days())?;
         let mut game_time_scheduler = GameTimeScheduler::new(
             season_config.start_time(),
             season_config.time_between_games(),

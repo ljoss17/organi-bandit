@@ -36,6 +36,8 @@ pub enum AppError {
     ParseIntError(#[from] TryFromIntError),
     #[error("no eligible teams to referee")]
     EmptyEligibleReferees,
+    #[error("no game days provided")]
+    EmptyGameDays,
     #[error("failed to resolve resource path")]
     ResourceResolveError(#[from] tauri::Error),
 }
