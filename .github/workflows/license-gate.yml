@@ -1,0 +1,27 @@
+name: License gate
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/license-gate.yml
+      - deny.toml
+      - src-tauri/Cargo.toml
+      - src-tauri/Cargo.lock
+  push:
+    paths:
+      - .github/workflows/license-gate.yml
+      - deny.toml
+      - src-tauri/Cargo.toml
+      - src-tauri/Cargo.lock
+
+jobs:
+  # Fails if a dependency's license isn't in deny.toml's allow list, so an
+  # incompatible license can't be introduced without it being noticed.
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          manifest-path: src-tauri/Cargo.toml
+          command-arguments: licenses

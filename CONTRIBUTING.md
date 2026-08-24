@@ -32,6 +32,13 @@ cargo test --all-features
 
 `clippy` is run with warnings denied, so a clean local run means CI will pass on that front too.
 
+CI also scans for hardcoded secrets ([gitleaks](https://github.com/gitleaks/gitleaks)) and checks dependency licenses ([cargo-deny](https://github.com/EmbarkStudios/cargo-deny)) on every PR. Both can be run locally too, if installed:
+
+```bash
+gitleaks detect -v
+cargo deny --manifest-path src-tauri/Cargo.toml --all-features check licenses
+```
+
 ## Making changes
 
 - Keep dependencies minimal. This project avoids pulling in a library where a small amount of hand-written code does the job just as well. If you're adding a dependency, it's worth explaining in the PR why the functionality couldn't reasonably be hand-rolled.
