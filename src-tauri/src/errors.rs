@@ -1,3 +1,4 @@
+use chrono::NaiveDate;
 use chrono::OutOfRange;
 use chrono::ParseWeekdayError;
 use rust_xlsxwriter::XlsxError;
@@ -7,6 +8,8 @@ use std::num::TryFromIntError;
 use std::{io::Error as IoError, num::ParseIntError};
 
 use thiserror::Error;
+
+use crate::types::game_time::GameTime;
 
 #[derive(Debug, Error)]
 pub enum AppError {
@@ -40,6 +43,8 @@ pub enum AppError {
     EmptyGameDays,
     #[error("failed to resolve resource path")]
     ResourceResolveError(#[from] tauri::Error),
+    #[error("{0} at {1} is not a valid local time (daylight saving transition)")]
+    InvalidGameDay(NaiveDate, GameTime),
 }
 
 impl Serialize for AppError {

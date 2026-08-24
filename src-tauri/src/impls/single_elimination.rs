@@ -89,7 +89,7 @@ impl Tournament for SingleElimination {
                 *game_day_scheduler.current_day(),
                 bye_time,
                 None,
-            );
+            )?;
 
             schedule.push(game);
             inner_teams.push(bye_team);
@@ -106,7 +106,7 @@ impl Tournament for SingleElimination {
                 *game_day_scheduler.current_day(),
                 game_time,
                 None,
-            );
+            )?;
             schedule.push(game);
 
             game_time_scheduler.try_advance();
@@ -130,7 +130,7 @@ impl Tournament for SingleElimination {
                 *game_day_scheduler.current_day(),
                 game_time,
                 None,
-            );
+            )?;
             second_round_schedule.push(game);
 
             game_time_scheduler.try_advance();
@@ -147,7 +147,7 @@ impl Tournament for SingleElimination {
                 *game_day_scheduler.current_day(),
                 game_time,
                 None,
-            );
+            )?;
             second_round_schedule.push(game);
 
             game_time_scheduler.try_advance();
@@ -171,7 +171,7 @@ impl Tournament for SingleElimination {
                     *game_day_scheduler.current_day(),
                     game_time,
                     None,
-                );
+                )?;
                 schedule.push(game);
 
                 game_time_scheduler.try_advance();

@@ -82,7 +82,8 @@ impl Tournament for RoundRobin {
                 if is_bye {
                     bye_pair = Some((home_team.clone(), away_team.clone()));
                 }
-                let game = Game::new_with_game_day(home_team, away_team, game_day, game_time, None);
+                let game =
+                    Game::new_with_game_day(home_team, away_team, game_day, game_time, None)?;
                 schedule.push(game);
                 if !is_bye {
                     game_time_scheduler.try_advance();
@@ -106,7 +107,7 @@ impl Tournament for RoundRobin {
                     let home_team = leg2_teams[i].clone();
                     let away_team = leg2_teams[leg2_count - 1 - i].clone();
                     let game =
-                        Game::new_with_game_day(home_team, away_team, game_day, game_time, None);
+                        Game::new_with_game_day(home_team, away_team, game_day, game_time, None)?;
                     schedule.push(game);
                     game_time_scheduler.try_advance();
                 }
@@ -184,7 +185,7 @@ impl RoundRobin {
                 game.get_game_day().date_naive(),
                 game.get_game_time()?,
                 Some(referee.clone()),
-            );
+            )?;
             schedule_with_referee.push(game);
         }
 
