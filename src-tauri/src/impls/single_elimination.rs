@@ -21,9 +21,12 @@ impl Tournament for SingleElimination {
         "Single Elimination".to_owned()
     }
 
-    fn validate_parameters(&self, teams: &[Team]) -> Result<(), AppError> {
+    fn validate_parameters(&self, teams: &[Team], number_fields: u32) -> Result<(), AppError> {
         if teams.len() < 2 {
             return Err(AppError::NotEnoughTeams(teams.len(), 2));
+        }
+        if number_fields < 1 {
+            return Err(AppError::InvalidNumberOfFields(number_fields));
         }
         Ok(())
     }
@@ -36,7 +39,7 @@ impl Tournament for SingleElimination {
         season_config: &SeasonConfig,
         _with_referees: bool,
     ) -> Result<Vec<Game>, AppError> {
-        self.validate_parameters(teams)?;
+        self.validate_parameters(teams, season_config.number_fields())?;
         let number_of_teams = teams.len();
         let bracket_size = number_of_teams.next_power_of_two();
         let number_of_byes = bracket_size - number_of_teams;
@@ -223,7 +226,7 @@ mod tests {
     fn test_single_elimination_valid_parameter_validation_1() {
         let single_elimination = SingleElimination::new(false);
 
-        let result = single_elimination.validate_parameters(&teams());
+        let result = single_elimination.validate_parameters(&teams(), 1);
 
         assert!(result.is_ok(), "passed parameters should be valid");
     }
@@ -232,9 +235,18 @@ mod tests {
     fn test_single_elimination_parameter_validation_rejects_too_few_teams() {
         let single_elimination = SingleElimination::new(false);
 
-        let result = single_elimination.validate_parameters(&[Team::new("Solo Team", None)]);
+        let result = single_elimination.validate_parameters(&[Team::new("Solo Team", None)], 1);
 
         assert!(matches!(result, Err(AppError::NotEnoughTeams(1, 2))));
+    }
+
+    #[test]
+    fn test_single_elimination_parameter_validation_rejects_zero_fields() {
+        let single_elimination = SingleElimination::new(false);
+
+        let result = single_elimination.validate_parameters(&teams(), 0);
+
+        assert!(matches!(result, Err(AppError::InvalidNumberOfFields(0))));
     }
 
     #[test]
@@ -260,10 +272,32 @@ mod tests {
     }
 
     #[test]
+    fn compute_schedule_rejects_zero_fields() {
+        let season_config = SeasonConfig::new(
+            start_date(),
+            GameTime::new(9, 0).unwrap(),
+            GameTime::new(12, 0).unwrap(),
+            GameTime::new(13, 30).unwrap(),
+            GameTime::new(1, 30).unwrap(),
+            0,
+            vec![Weekday::Sat],
+        );
+
+        let result = SingleElimination::new(false).compute_schedule(
+            &teams(),
+            &start_date(),
+            &season_config,
+            false,
+        );
+
+        assert!(matches!(result, Err(AppError::InvalidNumberOfFields(0))));
+    }
+
+    #[test]
     fn test_single_elimination_valid_parameter_validation_2() {
         let single_elimination = SingleElimination::new(false);
 
-        let result = single_elimination.validate_parameters(&teams());
+        let result = single_elimination.validate_parameters(&teams(), 1);
 
         assert!(result.is_ok(), "passed parameters should be valid");
     }

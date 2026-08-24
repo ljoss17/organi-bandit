@@ -1,4 +1,6 @@
-use chrono::{DateTime, Datelike};
+use std::path::Path;
+
+use chrono::{DateTime, Datelike, NaiveDate};
 use chrono_tz::Tz;
 use rust_i18n::t;
 use rust_xlsxwriter::workbook::Workbook;
@@ -39,31 +41,30 @@ pub fn generate_excel_schedule(
     // Add a worksheet to the workbook.
     let worksheet = workbook.add_worksheet();
 
-    let mut sorted_schedule = schedule.clone();
+    let mut sorted_schedule = schedule;
     sorted_schedule.sort_by_key(|game| *game.get_game_day());
 
     let mut row = 0;
-    let mut current_day = sorted_schedule[sorted_schedule.len() - 1]
-        .get_game_day()
-        .date_naive();
+    let mut current_day: Option<NaiveDate> = None;
     let mut current_time = None;
     let mut current_games = 0;
 
     // Resize "VS" columns
-    worksheet.set_column_width(2, 4)?;
-    worksheet.set_column_width(7, 4)?;
+    for i in 0..number_fields {
+        worksheet.set_column_width(5 * i + 2, 4)?;
+    }
 
     let mut day_index = 1;
 
     for game in sorted_schedule.iter() {
         let game_day = game.get_game_day();
-        if game_day.date_naive() != current_day {
+        if current_day != Some(game_day.date_naive()) {
             row += 2;
-            write_day_row(worksheet, row, game_day, day_index, language)?;
+            write_day_row(worksheet, row, game_day, day_index, number_fields, language)?;
             day_index += 1;
-            current_day = game_day.date_naive();
+            current_day = Some(game_day.date_naive());
             row += 1;
-            write_header_row(worksheet, row, 2, language)?;
+            write_header_row(worksheet, row, number_fields, language)?;
             row += 1;
             current_games = 0;
         } else if current_time != Some(game_day.time()) {
@@ -80,16 +81,22 @@ pub fn generate_excel_schedule(
         write_game_row(worksheet, game, row, current_games, language)?;
         current_games += 1;
     }
-    let current_date = chrono::Utc::now();
-    let year = current_date.year();
+    let year = sorted_schedule
+        .first()
+        .map(|game| game.get_game_day().year())
+        .unwrap_or_else(|| chrono::Utc::now().year());
 
     worksheet.autofit();
 
-    // Save the file to disk.
-    //workbook.save(format!("calendrier_{year}.xlsx"))?;
-    workbook.save(format!(
-        "{output_directory_path}/calendrier_{year}_{language}.xlsx"
-    ))?;
+    // Save the file to disk, versioning the filename instead of overwriting
+    // an existing one from a previous generation.
+    let mut version = 1;
+    let mut path = format!("{output_directory_path}/calendrier_{year}_{language}.xlsx");
+    while Path::new(&path).exists() {
+        version += 1;
+        path = format!("{output_directory_path}/calendrier_{year}_{language}_v{version}.xlsx");
+    }
+    workbook.save(path)?;
     Ok(())
 }
 
@@ -98,6 +105,7 @@ fn write_day_row(
     row: u32,
     game_day: &DateTime<Tz>,
     day_index: u32,
+    number_fields: u16,
     language: &str,
 ) -> Result<(), AppError> {
     let day = game_day.day();
@@ -115,7 +123,7 @@ fn write_day_row(
         row,
         0,
         row,
-        10,
+        number_fields * 5,
         &t!(
             "day",
             locale = language,
@@ -222,4 +230,146 @@ fn write_bye_game(
 
     worksheet.write_with_format(row, number_fields * 5, bye_team, &format_bye)?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs::{create_dir_all, remove_dir_all};
+    use std::path::PathBuf;
+
+    fn temp_output_dir(name: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!("organi-bandit-test-{name}"));
+        create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    #[test]
+    fn generate_excel_schedule_does_not_error_on_an_empty_schedule() {
+        let output_dir = temp_output_dir("empty-schedule");
+
+        let result =
+            generate_excel_schedule(vec![], 1, output_dir.to_string_lossy().to_string(), "en");
+
+        assert!(result.is_ok());
+        remove_dir_all(&output_dir).unwrap();
+    }
+
+    #[test]
+    fn generate_excel_schedule_succeeds_for_a_single_day_schedule() {
+        use crate::types::game_time::GameTime;
+
+        let game = Game::new_with_game_day(
+            Team::new("Home", None),
+            Team::new("Away", None),
+            chrono::NaiveDate::from_ymd_opt(2026, 5, 13).unwrap(),
+            GameTime::new(9, 0).unwrap(),
+            None,
+        )
+        .unwrap();
+        let output_dir = temp_output_dir("single-day-schedule");
+
+        let result = generate_excel_schedule(
+            vec![game],
+            1,
+            output_dir.to_string_lossy().to_string(),
+            "en",
+        );
+
+        assert!(result.is_ok());
+        remove_dir_all(&output_dir).unwrap();
+    }
+
+    #[test]
+    fn generate_excel_schedule_names_the_file_after_the_season_year_not_today() {
+        use crate::types::game_time::GameTime;
+
+        // The season's game is in 2030, deliberately far from whatever year
+        // the test actually runs in, so the assertion can't accidentally
+        // pass by coincidence.
+        let game = Game::new_with_game_day(
+            Team::new("Home", None),
+            Team::new("Away", None),
+            chrono::NaiveDate::from_ymd_opt(2030, 5, 13).unwrap(),
+            GameTime::new(9, 0).unwrap(),
+            None,
+        )
+        .unwrap();
+        let output_dir = temp_output_dir("season-year-filename");
+
+        generate_excel_schedule(
+            vec![game],
+            1,
+            output_dir.to_string_lossy().to_string(),
+            "en",
+        )
+        .unwrap();
+
+        assert!(output_dir.join("calendrier_2030_en.xlsx").exists());
+        remove_dir_all(&output_dir).unwrap();
+    }
+
+    #[test]
+    fn generate_excel_schedule_versions_the_filename_instead_of_overwriting() {
+        use crate::types::game_time::GameTime;
+
+        fn game(home: &str, away: &str) -> Game {
+            Game::new_with_game_day(
+                Team::new(home, None),
+                Team::new(away, None),
+                chrono::NaiveDate::from_ymd_opt(2030, 5, 13).unwrap(),
+                GameTime::new(9, 0).unwrap(),
+                None,
+            )
+            .unwrap()
+        }
+
+        let output_dir = temp_output_dir("versioned-schedule");
+
+        // First generation: plain filename, no suffix.
+        generate_excel_schedule(
+            vec![game("Home", "Away")],
+            1,
+            output_dir.to_string_lossy().to_string(),
+            "en",
+        )
+        .unwrap();
+        let first_path = output_dir.join("calendrier_2030_en.xlsx");
+        assert!(first_path.exists());
+        let first_bytes = std::fs::read(&first_path).unwrap();
+
+        // Second generation with the same year/language/output dir: should
+        // not touch the first file, should create a "_v2" file instead.
+        generate_excel_schedule(
+            vec![game("Other Home", "Other Away")],
+            1,
+            output_dir.to_string_lossy().to_string(),
+            "en",
+        )
+        .unwrap();
+        let second_path = output_dir.join("calendrier_2030_en_v2.xlsx");
+        assert!(second_path.exists(), "expected a versioned v2 file");
+        assert_eq!(
+            first_bytes,
+            std::fs::read(&first_path).unwrap(),
+            "original file should not have been modified"
+        );
+        let second_bytes = std::fs::read(&second_path).unwrap();
+
+        // Third generation: should create a "_v3" file, leaving the first
+        // two untouched.
+        generate_excel_schedule(
+            vec![game("Third Home", "Third Away")],
+            1,
+            output_dir.to_string_lossy().to_string(),
+            "en",
+        )
+        .unwrap();
+        let third_path = output_dir.join("calendrier_2030_en_v3.xlsx");
+        assert!(third_path.exists(), "expected a versioned v3 file");
+        assert_eq!(first_bytes, std::fs::read(&first_path).unwrap());
+        assert_eq!(second_bytes, std::fs::read(&second_path).unwrap());
+
+        remove_dir_all(&output_dir).unwrap();
+    }
 }

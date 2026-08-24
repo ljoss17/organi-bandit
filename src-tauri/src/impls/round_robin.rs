@@ -21,9 +21,12 @@ impl Tournament for RoundRobin {
         "Round Robin".to_owned()
     }
 
-    fn validate_parameters(&self, teams: &[Team]) -> Result<(), AppError> {
+    fn validate_parameters(&self, teams: &[Team], number_fields: u32) -> Result<(), AppError> {
         if teams.len() < 2 {
             return Err(AppError::NotEnoughTeams(teams.len(), 2));
+        }
+        if number_fields < 1 {
+            return Err(AppError::InvalidNumberOfFields(number_fields));
         }
         Ok(())
     }
@@ -36,7 +39,7 @@ impl Tournament for RoundRobin {
         with_referees: bool,
     ) -> Result<Vec<Game>, AppError> {
         // Validate parameters
-        self.validate_parameters(teams)?;
+        self.validate_parameters(teams, season_config.number_fields())?;
 
         let mut rng = rand::rng();
         let mut inner_teams = teams.to_vec();
@@ -210,7 +213,7 @@ mod tests {
     fn test_round_robin_parameter_validation_1() {
         let round_robin = RoundRobin;
 
-        let result = round_robin.validate_parameters(&teams());
+        let result = round_robin.validate_parameters(&teams(), 1);
 
         assert!(result.is_ok(), "passed parameters are not valid");
     }
@@ -219,9 +222,18 @@ mod tests {
     fn test_round_robin_parameter_validation_rejects_too_few_teams() {
         let round_robin = RoundRobin;
 
-        let result = round_robin.validate_parameters(&[Team::new("Solo Team", None)]);
+        let result = round_robin.validate_parameters(&[Team::new("Solo Team", None)], 1);
 
         assert!(matches!(result, Err(AppError::NotEnoughTeams(1, 2))));
+    }
+
+    #[test]
+    fn test_round_robin_parameter_validation_rejects_zero_fields() {
+        let round_robin = RoundRobin;
+
+        let result = round_robin.validate_parameters(&teams(), 0);
+
+        assert!(matches!(result, Err(AppError::InvalidNumberOfFields(0))));
     }
 
     #[test]
@@ -242,10 +254,27 @@ mod tests {
     }
 
     #[test]
+    fn compute_schedule_rejects_zero_fields() {
+        let season_config = SeasonConfig::new(
+            start_date(),
+            GameTime::new(9, 0).unwrap(),
+            GameTime::new(12, 0).unwrap(),
+            GameTime::new(13, 30).unwrap(),
+            GameTime::new(1, 30).unwrap(),
+            0,
+            vec![Weekday::Sat],
+        );
+
+        let result = RoundRobin.compute_schedule(&teams(), &start_date(), &season_config, false);
+
+        assert!(matches!(result, Err(AppError::InvalidNumberOfFields(0))));
+    }
+
+    #[test]
     fn test_round_robin_parameter_validation_2() {
         let round_robin = RoundRobin;
 
-        let result = round_robin.validate_parameters(&teams());
+        let result = round_robin.validate_parameters(&teams(), 1);
 
         assert!(result.is_ok(), "passed parameters are not valid");
     }

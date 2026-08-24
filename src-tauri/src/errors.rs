@@ -45,6 +45,8 @@ pub enum AppError {
     ResourceResolveError(#[from] tauri::Error),
     #[error("{0} at {1} is not a valid local time (daylight saving transition)")]
     InvalidGameDay(NaiveDate, GameTime),
+    #[error("number of fields must be at least 1, got {0}")]
+    InvalidNumberOfFields(u32),
 }
 
 impl Serialize for AppError {
