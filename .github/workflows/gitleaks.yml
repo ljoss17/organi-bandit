@@ -1,0 +1,22 @@
+name: Gitleaks
+
+on:
+  pull_request:
+  push:
+  workflow_dispatch:
+
+jobs:
+  # Scans the full commit history for hardcoded secrets (API keys, tokens,
+  # credentials) on every push and PR, and comments on the PR if it finds one.
+  scan:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: gitleaks/gitleaks-action@v3
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
