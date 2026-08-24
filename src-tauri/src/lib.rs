@@ -16,6 +16,8 @@ rust_i18n::i18n!("locales", fallback = "en");
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_process::init())
         .invoke_handler(tauri::generate_handler![
             read_team_list,
             write_team_list,

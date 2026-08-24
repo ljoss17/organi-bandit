@@ -51,6 +51,20 @@ async function loadTranslations(language) {
 
 loadTranslations(currentLanguage);
 
+async function checkForUpdate() {
+  try {
+    const update = await window.__TAURI__.updater.check();
+    if (update) {
+      await update.downloadAndInstall();
+      await window.__TAURI__.process.relaunch();
+    }
+  } catch (error) {
+    console.error("Failed to check for update:", error);
+  }
+}
+
+checkForUpdate();
+
 document.getElementById("language-select").addEventListener("change", (event) => {
   loadTranslations(event.target.value);
 });
