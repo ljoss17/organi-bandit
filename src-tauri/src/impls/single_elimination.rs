@@ -89,7 +89,8 @@ impl Tournament for SingleElimination {
         }
 
         // Compute the first round of single elimination, giving higher seed teams a bye week
-        for offset in 0..(number_of_teams - number_of_byes) / 2 {
+        let first_real_round_games = (number_of_teams - number_of_byes) / 2;
+        for offset in 0..first_real_round_games {
             let home_team = inner_teams[number_of_byes + offset].clone();
             let away_team = inner_teams[number_of_teams - 1 - offset].clone();
             let game_time = *game_time_scheduler.current_time();
@@ -109,13 +110,18 @@ impl Tournament for SingleElimination {
         game_time_scheduler.reset();
 
         let mut second_round_schedule = Vec::with_capacity(bracket_size / 4);
-        let second_round_byes = number_of_byes / 2;
         game_time_scheduler.reset();
 
-        // Compute the second round of single elimination, taking into account first round bye weeks
-        for offset in 0..second_round_byes {
-            let home_team = inner_teams[second_round_byes + offset].clone();
-            let away_team = inner_teams[number_of_teams - 3 - offset].clone();
+        // Compute the second round of single elimination, taking into account first round bye weeks.
+        // Bye recipients from round 1 are paired against each other two at a time. An odd one out
+        // (when number_of_byes is odd) plays the still-undecided winner of a round-1 real game. Any
+        // round-1 real games left over after that play each other, using the same WinnerA/WinnerB
+        // placeholder names later rounds use, since neither side is known yet.
+        let bye_recipients = &inner_teams[..number_of_byes];
+        let mut bye_recipient_pairs = bye_recipients.chunks_exact(2);
+        for pair in &mut bye_recipient_pairs {
+            let home_team = pair[0].clone();
+            let away_team = pair[1].clone();
             let game_time = *game_time_scheduler.current_time();
             let game = Game::new_with_game_day(
                 home_team,
@@ -128,11 +134,28 @@ impl Tournament for SingleElimination {
 
             game_time_scheduler.try_advance();
         }
-        let remaining_second_round_slots = bracket_size / 4 - second_round_schedule.len();
 
-        for team in inner_teams.iter().take(remaining_second_round_slots) {
-            let home_team = team.clone();
+        let mut winner_previous_slots = first_real_round_games;
+        if let [leftover_bye_recipient] = bye_recipient_pairs.remainder() {
+            let home_team = leftover_bye_recipient.clone();
             let away_team = Team::new("WinnerPrevious", None);
+            let game_time = *game_time_scheduler.current_time();
+            let game = Game::new_with_game_day(
+                home_team,
+                away_team,
+                *game_day_scheduler.current_day(),
+                game_time,
+                None,
+            )?;
+            second_round_schedule.push(game);
+
+            game_time_scheduler.try_advance();
+            winner_previous_slots -= 1;
+        }
+
+        for _ in 0..winner_previous_slots / 2 {
+            let home_team = Team::new("WinnerA", None);
+            let away_team = Team::new("WinnerB", None);
             let game_time = *game_time_scheduler.current_time();
             let game = Game::new_with_game_day(
                 home_team,
@@ -187,7 +210,7 @@ impl SingleElimination {
 
 #[cfg(test)]
 mod tests {
-    use std::collections::HashMap;
+    use std::collections::{HashMap, HashSet};
 
     use super::*;
     use chrono::Weekday;
@@ -354,35 +377,317 @@ mod tests {
         assert_schedule(&schedule, &teams_bigger(), season_config.number_fields())
     }
 
-    fn assert_schedule(schedule: &[Game], teams: &[Team], number_of_fields: u32) {
-        assert_eq!(teams.len().next_power_of_two() - 1, schedule.len());
-        let number_of_byes = teams.len().next_power_of_two() - teams.len();
-        for game in schedule.iter().take(number_of_byes) {
-            assert!(
-                game.get_home_team().get_name() == "Bye"
-                    || game.get_away_team().get_name() == "Bye",
-                "should be a bye week"
-            );
-        }
-        let mut games = teams.len().next_power_of_two() / 2;
-        let mut rounds = Vec::new();
-        while games >= 1 {
-            rounds.push(games);
-            games /= 2;
-        }
-        let mut game_counter = number_of_fields;
-        let mut games_per_round = 0;
-        let mut max_games_per_round = rounds[0];
-        let mut round = 1;
+    #[test]
+    fn test_single_elimination_anonymous_mode() {
+        let season_config = SeasonConfig::new(
+            start_date(),
+            GameTime::new(9, 0).unwrap(),
+            GameTime::new(12, 0).unwrap(),
+            GameTime::new(13, 30).unwrap(),
+            GameTime::new(1, 30).unwrap(),
+            2,
+            vec![Weekday::Sat],
+        );
 
-        let mut games_per_time = HashMap::new();
+        let single_elimination = SingleElimination::new(true);
 
+        let schedule = single_elimination
+            .compute_schedule(&teams(), &start_date(), &season_config, false)
+            .unwrap();
+
+        assert_schedule(&schedule, &teams(), season_config.number_fields());
+
+        // Anonymous mode should never leak the real team names into round 1.
+        let input_teams = teams();
+        let real_names: HashSet<&str> = input_teams.iter().map(|team| team.get_name()).collect();
         for game in schedule.iter() {
+            assert!(!real_names.contains(game.get_home_team().get_name()));
+            assert!(!real_names.contains(game.get_away_team().get_name()));
+        }
+    }
+
+    #[test]
+    fn test_single_elimination_gives_byes_to_lowest_seed_numbers() {
+        // Seed 1 is the top seed by convention; the lowest seed numbers
+        // should be the ones receiving byes.
+        let teams = [
+            Team::new("Seed 1", Some(1)),
+            Team::new("Seed 2", Some(2)),
+            Team::new("Seed 3", Some(3)),
+            Team::new("Seed 4", Some(4)),
+            Team::new("Seed 5", Some(5)),
+        ];
+        let season_config = SeasonConfig::new(
+            start_date(),
+            GameTime::new(9, 0).unwrap(),
+            GameTime::new(12, 0).unwrap(),
+            GameTime::new(13, 30).unwrap(),
+            GameTime::new(1, 30).unwrap(),
+            2,
+            vec![Weekday::Sat],
+        );
+
+        let schedule = SingleElimination::new(false)
+            .compute_schedule(&teams, &start_date(), &season_config, false)
+            .unwrap();
+
+        // 5 teams -> bracket of 8 -> 3 byes, expected for seeds 1, 2, 3.
+        let bye_recipients: HashSet<&str> = schedule[..3]
+            .iter()
+            .flat_map(|game| {
+                [
+                    game.get_home_team().get_name(),
+                    game.get_away_team().get_name(),
+                ]
+            })
+            .filter(|&name| name != "Bye")
+            .collect();
+
+        assert_eq!(
+            bye_recipients,
+            HashSet::from(["Seed 1", "Seed 2", "Seed 3"]),
+            "byes should go to the lowest (best) seed numbers"
+        );
+    }
+
+    #[test]
+    fn test_single_elimination_power_of_two_team_count_needs_no_byes() {
+        let teams = [
+            Team::new("A", None),
+            Team::new("B", None),
+            Team::new("C", None),
+            Team::new("D", None),
+        ];
+        let season_config = SeasonConfig::new(
+            start_date(),
+            GameTime::new(9, 0).unwrap(),
+            GameTime::new(12, 0).unwrap(),
+            GameTime::new(13, 30).unwrap(),
+            GameTime::new(1, 30).unwrap(),
+            2,
+            vec![Weekday::Sat],
+        );
+
+        let schedule = SingleElimination::new(false)
+            .compute_schedule(&teams, &start_date(), &season_config, false)
+            .unwrap();
+
+        assert!(
+            schedule
+                .iter()
+                .all(|game| game.get_home_team().get_name() != "Bye"
+                    && game.get_away_team().get_name() != "Bye"),
+            "a power-of-two team count should never need a bye"
+        );
+        assert_schedule(&schedule, &teams, season_config.number_fields());
+    }
+
+    #[test]
+    fn test_single_elimination_two_teams_minimal_bracket() {
+        let teams = [Team::new("A", None), Team::new("B", None)];
+        let season_config = SeasonConfig::new(
+            start_date(),
+            GameTime::new(9, 0).unwrap(),
+            GameTime::new(12, 0).unwrap(),
+            GameTime::new(13, 30).unwrap(),
+            GameTime::new(1, 30).unwrap(),
+            1,
+            vec![Weekday::Sat],
+        );
+
+        let schedule = SingleElimination::new(false)
+            .compute_schedule(&teams, &start_date(), &season_config, false)
+            .unwrap();
+
+        assert_schedule(&schedule, &teams, season_config.number_fields());
+    }
+
+    #[test]
+    fn test_single_elimination_three_teams_smallest_bye_case() {
+        let teams = [
+            Team::new("A", None),
+            Team::new("B", None),
+            Team::new("C", None),
+        ];
+        let season_config = SeasonConfig::new(
+            start_date(),
+            GameTime::new(9, 0).unwrap(),
+            GameTime::new(12, 0).unwrap(),
+            GameTime::new(13, 30).unwrap(),
+            GameTime::new(1, 30).unwrap(),
+            1,
+            vec![Weekday::Sat],
+        );
+
+        let schedule = SingleElimination::new(false)
+            .compute_schedule(&teams, &start_date(), &season_config, false)
+            .unwrap();
+
+        assert_schedule(&schedule, &teams, season_config.number_fields());
+    }
+
+    #[test]
+    fn test_single_elimination_even_number_of_byes() {
+        let teams = [
+            Team::new("A", None),
+            Team::new("B", None),
+            Team::new("C", None),
+            Team::new("D", None),
+            Team::new("E", None),
+            Team::new("F", None),
+        ];
+        let season_config = SeasonConfig::new(
+            start_date(),
+            GameTime::new(9, 0).unwrap(),
+            GameTime::new(12, 0).unwrap(),
+            GameTime::new(13, 30).unwrap(),
+            GameTime::new(1, 30).unwrap(),
+            2,
+            vec![Weekday::Sat],
+        );
+
+        let schedule = SingleElimination::new(false)
+            .compute_schedule(&teams, &start_date(), &season_config, false)
+            .unwrap();
+
+        // 6 teams -> bracket of 8 -> 2 byes (even).
+        assert_eq!(
+            schedule
+                .iter()
+                .filter(|game| game.get_home_team().get_name() == "Bye"
+                    || game.get_away_team().get_name() == "Bye")
+                .count(),
+            2
+        );
+        assert_schedule(&schedule, &teams, season_config.number_fields());
+    }
+
+    #[test]
+    fn test_is_anonymous_reflects_constructor_argument() {
+        assert!(SingleElimination::new(true).is_anonymous());
+        assert!(!SingleElimination::new(false).is_anonymous());
+    }
+
+    fn assert_schedule(schedule: &[Game], teams: &[Team], number_of_fields: u32) {
+        let bracket_size = teams.len().next_power_of_two();
+        assert_eq!(bracket_size - 1, schedule.len());
+        let number_of_byes = bracket_size - teams.len();
+        let first_real_round_games = (teams.len() - number_of_byes) / 2;
+
+        for (index, game) in schedule.iter().enumerate() {
             assert_ne!(
                 game.get_home_team(),
                 game.get_away_team(),
                 "home and away team should be different"
             );
+            assert_eq!(
+                game.get_referee(),
+                &None,
+                "single elimination does not support referees"
+            );
+            let is_bye = game.get_home_team().get_name() == "Bye"
+                || game.get_away_team().get_name() == "Bye";
+            assert_eq!(
+                is_bye,
+                index < number_of_byes,
+                "bye games should be exactly the first {number_of_byes} games, found one at index {index}"
+            );
+        }
+
+        // Round 1 (the byes plus the first real pairing round) should
+        // account for every input team exactly once, none dropped, none
+        // duplicated. Later rounds use placeholder names (e.g. "WinnerA"),
+        // since the actual winners aren't known yet, so this only checks
+        // round 1. Names aren't compared against the input teams directly,
+        // since anonymous mode renames teams to "1".."N", so this only
+        // checks that round 1 has exactly as many distinct participants as
+        // there are input teams.
+        let round_1_games = number_of_byes + first_real_round_games;
+        let round_1_team_names: Vec<&str> = schedule[..round_1_games]
+            .iter()
+            .flat_map(|game| {
+                [
+                    game.get_home_team().get_name(),
+                    game.get_away_team().get_name(),
+                ]
+            })
+            .filter(|&name| name != "Bye")
+            .collect();
+        let unique_round_1_names: HashSet<&str> = round_1_team_names.iter().copied().collect();
+        assert_eq!(
+            round_1_team_names.len(),
+            teams.len(),
+            "round 1 should account for every input team exactly once"
+        );
+        assert_eq!(
+            unique_round_1_names.len(),
+            teams.len(),
+            "round 1 should not have any duplicate teams"
+        );
+
+        // Round 2 should seat every round-1 bye recipient exactly once
+        // (identified directly from round 1's bye games), plus one
+        // "WinnerPrevious" placeholder per round-1 real game (the winner
+        // isn't known yet). No bye recipient should be missing, and none
+        // should be paired against another bye recipient more than once.
+        // A 2-team bracket has no round 2 at all (round 1's single game
+        // already decides the champion), so this only applies once a
+        // round 2 genuinely exists.
+        let round_2_games = bracket_size / 4;
+        if round_2_games > 0 {
+            let bye_recipients: Vec<&str> = schedule[..number_of_byes]
+                .iter()
+                .flat_map(|game| {
+                    [
+                        game.get_home_team().get_name(),
+                        game.get_away_team().get_name(),
+                    ]
+                })
+                .filter(|&name| name != "Bye")
+                .collect();
+            let round_2_slice = &schedule[round_1_games..round_1_games + round_2_games];
+            let round_2_names: Vec<&str> = round_2_slice
+                .iter()
+                .flat_map(|game| {
+                    [
+                        game.get_home_team().get_name(),
+                        game.get_away_team().get_name(),
+                    ]
+                })
+                .collect();
+            let round_2_bye_recipient_names: Vec<&str> = round_2_names
+                .iter()
+                .copied()
+                .filter(|name| bye_recipients.contains(name))
+                .collect();
+            let unique_round_2_bye_recipient_names: HashSet<&str> =
+                round_2_bye_recipient_names.iter().copied().collect();
+            assert_eq!(
+                round_2_bye_recipient_names.len(),
+                number_of_byes,
+                "every round-1 bye recipient should appear in round 2 exactly once"
+            );
+            assert_eq!(
+                unique_round_2_bye_recipient_names.len(),
+                number_of_byes,
+                "round 2 should not pair the same bye recipient more than once"
+            );
+            // A round-1 real game's still-undecided winner shows up in round
+            // 2 as either "WinnerPrevious" (paired against a known bye
+            // recipient) or "WinnerA"/"WinnerB" (paired against another
+            // undecided winner), depending on how it's slotted.
+            let unresolved_winner_count = round_2_names
+                .iter()
+                .filter(|&&name| name == "WinnerPrevious" || name == "WinnerA" || name == "WinnerB")
+                .count();
+            assert_eq!(
+                unresolved_winner_count, first_real_round_games,
+                "round 2 should have one unresolved-winner slot per round-1 real game"
+            );
+        }
+
+        let mut games_per_time = HashMap::new();
+        for game in schedule.iter() {
             if game.get_home_team().get_name() != "Bye" && game.get_away_team().get_name() != "Bye"
             {
                 let game_time = game.get_game_time().unwrap();
@@ -390,20 +695,6 @@ mod tests {
                 let date_identifier = (game_time, *game_date);
                 let value = games_per_time.entry(date_identifier).or_insert(0);
                 *value += 1;
-            }
-
-            games_per_round += 1;
-            if game.get_home_team().get_name() != "Bye" && game.get_away_team().get_name() != "Bye"
-            {
-                game_counter -= 1;
-            }
-            if games_per_round == max_games_per_round && max_games_per_round != 1 {
-                game_counter = number_of_fields;
-                max_games_per_round = rounds[round];
-                round += 1;
-                games_per_round = 0;
-            } else if game_counter == 0 {
-                game_counter = number_of_fields;
             }
         }
 
