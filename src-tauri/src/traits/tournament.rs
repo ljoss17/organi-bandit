@@ -8,7 +8,11 @@ use crate::types::team::Team;
 pub trait Tournament {
     fn name(&self) -> String;
 
-    fn validate_parameters(&self, teams: &[Team], number_fields: u32) -> Result<(), AppError>;
+    fn validate_parameters(
+        &self,
+        teams: &[Team],
+        season_config: &SeasonConfig,
+    ) -> Result<(), AppError>;
 
     fn compute_schedule(
         &self,

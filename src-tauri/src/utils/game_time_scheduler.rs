@@ -37,6 +37,18 @@ impl<'a> GameTimeScheduler<'a> {
         self.current_games_per_time
     }
 
+    // No new game should be scheduled past this time of day. A day only has
+    // so many reasonable hours to play in, so once this is reached the
+    // remaining games for that "round" need to spill onto the next day
+    // instead of wrapping the clock back around within the same day.
+    fn hard_stop() -> GameTime {
+        GameTime::new(17, 0).expect("17:00 is always a valid time")
+    }
+
+    pub fn is_past_hard_stop(&self) -> bool {
+        self.current_time > Self::hard_stop()
+    }
+
     // Advance the time
     pub fn try_advance(&mut self) {
         if self.current_games_per_time == self.number_of_fields {
@@ -150,5 +162,41 @@ mod tests {
 
         game_time_scheduler.try_advance();
         assert_eq!(game_time_scheduler.current_time(), &expected_next_time);
+    }
+
+    #[test]
+    fn is_past_hard_stop_false_before_17_00() {
+        let start_time = GameTime::new(16, 30).unwrap();
+        let time_between_games = GameTime::new(0, 30).unwrap();
+        let start_break = GameTime::new(12, 0).unwrap();
+        let end_break = GameTime::new(13, 30).unwrap();
+
+        let game_time_scheduler = GameTimeScheduler::new(
+            &start_time,
+            &time_between_games,
+            1,
+            &start_break,
+            &end_break,
+        );
+
+        assert!(!game_time_scheduler.is_past_hard_stop());
+    }
+
+    #[test]
+    fn is_past_hard_stop_true_after_17_00() {
+        let start_time = GameTime::new(17, 30).unwrap();
+        let time_between_games = GameTime::new(0, 30).unwrap();
+        let start_break = GameTime::new(12, 0).unwrap();
+        let end_break = GameTime::new(13, 30).unwrap();
+
+        let game_time_scheduler = GameTimeScheduler::new(
+            &start_time,
+            &time_between_games,
+            1,
+            &start_break,
+            &end_break,
+        );
+
+        assert!(game_time_scheduler.is_past_hard_stop());
     }
 }

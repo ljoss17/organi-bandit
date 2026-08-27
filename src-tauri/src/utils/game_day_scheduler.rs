@@ -1,6 +1,7 @@
 use chrono::{Datelike, Days, NaiveDate, Weekday};
 
 use crate::errors::AppError;
+use crate::utils::game_time_scheduler::GameTimeScheduler;
 
 pub struct GameDayScheduler<'a> {
     game_days: &'a [Weekday],
@@ -55,6 +56,16 @@ impl<'a> GameDayScheduler<'a> {
             .current_day
             .checked_add_days(Days::new(days_to_next as u64))
             .expect("offset is at most 7 days, cannot overflow NaiveDate's range");
+    }
+
+    // Move on to the next day if the time scheduler has run out of room for
+    // today, instead of letting the time wrap back around and collide with
+    // a time slot already used earlier today.
+    pub fn advance_if_past_hard_stop(&mut self, game_time_scheduler: &mut GameTimeScheduler) {
+        if game_time_scheduler.is_past_hard_stop() {
+            self.advance();
+            game_time_scheduler.reset();
+        }
     }
 }
 

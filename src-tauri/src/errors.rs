@@ -1,11 +1,10 @@
 use chrono::NaiveDate;
 use chrono::OutOfRange;
-use chrono::ParseWeekdayError;
 use rust_xlsxwriter::XlsxError;
 use serde::{Serialize, Serializer};
 use serde_json::Error as SerdeError;
+use std::io::Error as IoError;
 use std::num::TryFromIntError;
-use std::{io::Error as IoError, num::ParseIntError};
 
 use thiserror::Error;
 
@@ -17,18 +16,10 @@ pub enum AppError {
     ReadError(#[from] IoError),
     #[error("failed to deserialise data")]
     DeserializeError(#[from] SerdeError),
-    #[error("failed to parse string to chrono Weekday")]
-    WeekdayParseError(#[from] ParseWeekdayError),
     #[error("failed to find game")]
     MissingGame,
     #[error("not enough teams. Got {0}, require at least {1}")]
     NotEnoughTeams(usize, usize),
-    #[error("{0} is too short. Game days {1}, required game days {2}")]
-    TournamentTooShort(String, usize, usize),
-    #[error("failed to parse string to integer")]
-    ParseDateError(#[from] ParseIntError),
-    #[error("failed to create date time from {0:?}")]
-    CreateDateTimeError(Vec<String>),
     #[error("Xlsx error")]
     XlsxError(#[from] XlsxError),
     #[error("Date out of range")]
@@ -47,6 +38,14 @@ pub enum AppError {
     InvalidGameDay(NaiveDate, GameTime),
     #[error("number of fields must be at least 1, got {0}")]
     InvalidNumberOfFields(u32),
+    #[error(
+        "cannot give every team two distinct opponents per match day with only {0} team(s); at least 4 are required"
+    )]
+    InfeasibleDailyDoubleRoundRobin(usize),
+    #[error(
+        "the season's daily schedule window can't fit {0} game slots (only {1} available between the start time and the hard stop, minus any break); widen the game window, add fields, or reduce time between games"
+    )]
+    InsufficientDailyCapacity(u32, u32),
 }
 
 impl Serialize for AppError {

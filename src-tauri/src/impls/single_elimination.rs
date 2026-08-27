@@ -21,10 +21,15 @@ impl Tournament for SingleElimination {
         "Single Elimination".to_owned()
     }
 
-    fn validate_parameters(&self, teams: &[Team], number_fields: u32) -> Result<(), AppError> {
+    fn validate_parameters(
+        &self,
+        teams: &[Team],
+        season_config: &SeasonConfig,
+    ) -> Result<(), AppError> {
         if teams.len() < 2 {
             return Err(AppError::NotEnoughTeams(teams.len(), 2));
         }
+        let number_fields = season_config.number_fields();
         if number_fields < 1 {
             return Err(AppError::InvalidNumberOfFields(number_fields));
         }
@@ -39,7 +44,7 @@ impl Tournament for SingleElimination {
         season_config: &SeasonConfig,
         _with_referees: bool,
     ) -> Result<Vec<Game>, AppError> {
-        self.validate_parameters(teams, season_config.number_fields())?;
+        self.validate_parameters(teams, season_config)?;
         let number_of_teams = teams.len();
         let bracket_size = number_of_teams.next_power_of_two();
         let number_of_byes = bracket_size - number_of_teams;
@@ -91,6 +96,7 @@ impl Tournament for SingleElimination {
         // Compute the first round of single elimination, giving higher seed teams a bye week
         let first_real_round_games = (number_of_teams - number_of_byes) / 2;
         for offset in 0..first_real_round_games {
+            game_day_scheduler.advance_if_past_hard_stop(&mut game_time_scheduler);
             let home_team = inner_teams[number_of_byes + offset].clone();
             let away_team = inner_teams[number_of_teams - 1 - offset].clone();
             let game_time = *game_time_scheduler.current_time();
@@ -110,7 +116,6 @@ impl Tournament for SingleElimination {
         game_time_scheduler.reset();
 
         let mut second_round_schedule = Vec::with_capacity(bracket_size / 4);
-        game_time_scheduler.reset();
 
         // Compute the second round of single elimination, taking into account first round bye weeks.
         // Bye recipients from round 1 are paired against each other two at a time. An odd one out
@@ -120,6 +125,7 @@ impl Tournament for SingleElimination {
         let bye_recipients = &inner_teams[..number_of_byes];
         let mut bye_recipient_pairs = bye_recipients.chunks_exact(2);
         for pair in &mut bye_recipient_pairs {
+            game_day_scheduler.advance_if_past_hard_stop(&mut game_time_scheduler);
             let home_team = pair[0].clone();
             let away_team = pair[1].clone();
             let game_time = *game_time_scheduler.current_time();
@@ -137,6 +143,7 @@ impl Tournament for SingleElimination {
 
         let mut winner_previous_slots = first_real_round_games;
         if let [leftover_bye_recipient] = bye_recipient_pairs.remainder() {
+            game_day_scheduler.advance_if_past_hard_stop(&mut game_time_scheduler);
             let home_team = leftover_bye_recipient.clone();
             let away_team = Team::new("WinnerPrevious", None);
             let game_time = *game_time_scheduler.current_time();
@@ -154,6 +161,7 @@ impl Tournament for SingleElimination {
         }
 
         for _ in 0..winner_previous_slots / 2 {
+            game_day_scheduler.advance_if_past_hard_stop(&mut game_time_scheduler);
             let home_team = Team::new("WinnerA", None);
             let away_team = Team::new("WinnerB", None);
             let game_time = *game_time_scheduler.current_time();
@@ -171,13 +179,16 @@ impl Tournament for SingleElimination {
 
         schedule.append(&mut second_round_schedule);
 
-        game_day_scheduler.advance();
-        game_time_scheduler.reset();
-
-        // Compute all remaining rounds as there is no side effect from bye weeks
+        // Compute all remaining rounds as there is no side effect from bye weeks.
+        // Each round is a new day, since the previous round's winners aren't
+        // decided yet.
         for round in 3..=number_of_round {
+            game_day_scheduler.advance();
+            game_time_scheduler.reset();
+
             let number_of_games = bracket_size / 2usize.pow(round);
             for _ in 0..number_of_games {
+                game_day_scheduler.advance_if_past_hard_stop(&mut game_time_scheduler);
                 let game_time = *game_time_scheduler.current_time();
                 let home_team = Team::new("WinnerA", None);
                 let away_team = Team::new("WinnerB", None);
@@ -247,27 +258,55 @@ mod tests {
 
     #[test]
     fn test_single_elimination_valid_parameter_validation_1() {
+        let season_config = SeasonConfig::new(
+            start_date(),
+            GameTime::new(9, 0).unwrap(),
+            GameTime::new(12, 0).unwrap(),
+            GameTime::new(13, 30).unwrap(),
+            GameTime::new(1, 30).unwrap(),
+            1,
+            vec![Weekday::Sat],
+        );
         let single_elimination = SingleElimination::new(false);
 
-        let result = single_elimination.validate_parameters(&teams(), 1);
+        let result = single_elimination.validate_parameters(&teams(), &season_config);
 
         assert!(result.is_ok(), "passed parameters should be valid");
     }
 
     #[test]
     fn test_single_elimination_parameter_validation_rejects_too_few_teams() {
+        let season_config = SeasonConfig::new(
+            start_date(),
+            GameTime::new(9, 0).unwrap(),
+            GameTime::new(12, 0).unwrap(),
+            GameTime::new(13, 30).unwrap(),
+            GameTime::new(1, 30).unwrap(),
+            1,
+            vec![Weekday::Sat],
+        );
         let single_elimination = SingleElimination::new(false);
 
-        let result = single_elimination.validate_parameters(&[Team::new("Solo Team", None)], 1);
+        let result =
+            single_elimination.validate_parameters(&[Team::new("Solo Team", None)], &season_config);
 
         assert!(matches!(result, Err(AppError::NotEnoughTeams(1, 2))));
     }
 
     #[test]
     fn test_single_elimination_parameter_validation_rejects_zero_fields() {
+        let season_config = SeasonConfig::new(
+            start_date(),
+            GameTime::new(9, 0).unwrap(),
+            GameTime::new(12, 0).unwrap(),
+            GameTime::new(13, 30).unwrap(),
+            GameTime::new(1, 30).unwrap(),
+            0,
+            vec![Weekday::Sat],
+        );
         let single_elimination = SingleElimination::new(false);
 
-        let result = single_elimination.validate_parameters(&teams(), 0);
+        let result = single_elimination.validate_parameters(&teams(), &season_config);
 
         assert!(matches!(result, Err(AppError::InvalidNumberOfFields(0))));
     }
@@ -318,9 +357,18 @@ mod tests {
 
     #[test]
     fn test_single_elimination_valid_parameter_validation_2() {
+        let season_config = SeasonConfig::new(
+            start_date(),
+            GameTime::new(9, 0).unwrap(),
+            GameTime::new(12, 0).unwrap(),
+            GameTime::new(13, 30).unwrap(),
+            GameTime::new(1, 30).unwrap(),
+            1,
+            vec![Weekday::Sat],
+        );
         let single_elimination = SingleElimination::new(false);
 
-        let result = single_elimination.validate_parameters(&teams(), 1);
+        let result = single_elimination.validate_parameters(&teams(), &season_config);
 
         assert!(result.is_ok(), "passed parameters should be valid");
     }
@@ -375,6 +423,70 @@ mod tests {
         let schedule = maybe_schedule.unwrap();
 
         assert_schedule(&schedule, &teams_bigger(), season_config.number_fields())
+    }
+
+    #[test]
+    fn test_single_elimination_later_rounds_advance_the_day() {
+        // 9 teams needs 4 rounds (bracket of 16), so rounds 3 and 4 both
+        // exist, letting this check that the day actually advances between
+        // them rather than both landing on the same calendar day.
+        let season_config = SeasonConfig::new(
+            start_date(),
+            GameTime::new(9, 0).unwrap(),
+            GameTime::new(12, 0).unwrap(),
+            GameTime::new(13, 30).unwrap(),
+            GameTime::new(1, 30).unwrap(),
+            2,
+            vec![Weekday::Sat],
+        );
+
+        let teams = teams_bigger();
+        let schedule = SingleElimination::new(false)
+            .compute_schedule(&teams, &start_date(), &season_config, false)
+            .unwrap();
+
+        let bracket_size = teams.len().next_power_of_two();
+        let number_of_byes = bracket_size - teams.len();
+        let first_real_round_games = (teams.len() - number_of_byes) / 2;
+        let round_1_games = number_of_byes + first_real_round_games;
+        let round_2_games = bracket_size / 4;
+        let round_3_games = bracket_size / 8;
+        let round_3_start = round_1_games + round_2_games;
+        let round_4_start = round_3_start + round_3_games;
+
+        let round_3_day = schedule[round_3_start].get_game_day().date_naive();
+        let round_4_day = schedule[round_4_start].get_game_day().date_naive();
+
+        assert!(
+            round_4_day > round_3_day,
+            "round 4 ({round_4_day}) should be scheduled after round 3 ({round_3_day}), not the same day"
+        );
+    }
+
+    #[test]
+    fn test_large_bracket_respects_single_field_capacity() {
+        // With only 1 field, no two games should ever share the exact same
+        // date and time. A large enough round (round 1 of a 32-team
+        // power-of-two bracket needs 16 games) can need more distinct time
+        // slots in a single day than the day's time window provides before
+        // wrapping back around, colliding with a time already used earlier
+        // that same day, the same failure mode found in round_robin.rs.
+        let teams: Vec<Team> = (0..32).map(|i| Team::new(&format!("T{i}"), None)).collect();
+        let season_config = SeasonConfig::new(
+            start_date(),
+            GameTime::new(9, 0).unwrap(),
+            GameTime::new(12, 0).unwrap(),
+            GameTime::new(20, 0).unwrap(),
+            GameTime::new(1, 30).unwrap(),
+            1,
+            vec![Weekday::Wed, Weekday::Sat],
+        );
+
+        let schedule = SingleElimination::new(false)
+            .compute_schedule(&teams, &start_date(), &season_config, false)
+            .unwrap();
+
+        assert_schedule(&schedule, &teams, season_config.number_fields());
     }
 
     #[test]

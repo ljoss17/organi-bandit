@@ -21,13 +21,46 @@ impl Tournament for RoundRobin {
         "Round Robin".to_owned()
     }
 
-    fn validate_parameters(&self, teams: &[Team], number_fields: u32) -> Result<(), AppError> {
-        if teams.len() < 2 {
-            return Err(AppError::NotEnoughTeams(teams.len(), 2));
+    fn validate_parameters(
+        &self,
+        teams: &[Team],
+        season_config: &SeasonConfig,
+    ) -> Result<(), AppError> {
+        if season_config.number_fields() < 1 {
+            return Err(AppError::InvalidNumberOfFields(
+                season_config.number_fields(),
+            ));
         }
-        if number_fields < 1 {
-            return Err(AppError::InvalidNumberOfFields(number_fields));
+
+        // Below 4 teams, once one team is on bye, too few opponents remain
+        // to give every team two *different* opponents on a shared match
+        // day — mathematically impossible regardless of how much time is
+        // available.
+        if teams.len() < 4 {
+            return Err(AppError::NotEnoughTeams(teams.len(), 4));
         }
+
+        // Both legs are structurally identical single-leg schedules (same
+        // circle-method logic, just a different shuffle), so they always
+        // need the same number of real games per round: teams.len() / 2
+        // (integer division holds whether the count is even or odd, the
+        // odd case's bye simply removes one team from that round before
+        // halving). The two legs get slot-packed independently before
+        // merging, so required capacity is the SUM of each leg's own
+        // ceil, not a combined ceil (e.g. 2 fields, 3+3 games needs
+        // 2+2=4 slots, not ceil(6/2)=3).
+        let games_per_leg = teams.len() as u32 / 2;
+        let slots_per_leg = games_per_leg.div_ceil(season_config.number_fields());
+        let required_slots = 2 * slots_per_leg;
+
+        let available_slots = self.available_slots_per_day(season_config);
+        if required_slots > available_slots {
+            return Err(AppError::InsufficientDailyCapacity(
+                required_slots,
+                available_slots,
+            ));
+        }
+
         Ok(())
     }
 
@@ -39,71 +72,24 @@ impl Tournament for RoundRobin {
         with_referees: bool,
     ) -> Result<Vec<Game>, AppError> {
         // Validate parameters
-        self.validate_parameters(teams, season_config.number_fields())?;
+        self.validate_parameters(teams, season_config)?;
 
-        let mut rng = rand::rng();
-        let mut inner_teams = teams.to_vec();
-        if !inner_teams.len().is_multiple_of(2) {
-            inner_teams.push(Team::new("Bye", None));
-        }
-        inner_teams.shuffle(&mut rng);
-        let number_teams = inner_teams.len();
-
-        let mut schedule = vec![];
-
-        let mut game_day_scheduler = GameDayScheduler::new(start_date, season_config.game_days())?;
-        let mut game_time_scheduler = GameTimeScheduler::new(
-            season_config.start_time(),
-            season_config.time_between_games(),
-            season_config.number_fields(),
-            season_config.start_break(),
-            season_config.end_break(),
-        );
-
-        for _ in 0..number_teams - 1 {
-            let game_day = *game_day_scheduler.current_day();
-            game_day_scheduler.advance();
-            game_time_scheduler.reset();
-
-            // Leg 1: this round's pairing.
-            let mut bye_pair = None;
-            for i in 0..(number_teams / 2) {
-                let game_time = *game_time_scheduler.current_time();
-                let home_team = inner_teams[i].clone();
-                let away_team = inner_teams[number_teams - 1 - i].clone();
-                let is_bye = home_team.get_name() == "Bye" || away_team.get_name() == "Bye";
-                if is_bye {
-                    bye_pair = Some((home_team.clone(), away_team.clone()));
-                }
-                let game =
-                    Game::new_with_game_day(home_team, away_team, game_day, game_time, None)?;
-                schedule.push(game);
-                if !is_bye {
-                    game_time_scheduler.try_advance();
+        let mut maybe_schedule = None;
+        'outer: for _ in 0..100 {
+            let pass_a = self.generate_single_game_schedule(teams, start_date, season_config)?;
+            for _ in 0..100 {
+                let pass_b =
+                    self.generate_single_game_schedule(teams, start_date, season_config)?;
+                if let Some(schedule) = self.merge_schedules(pass_a.clone(), pass_b, season_config)
+                {
+                    maybe_schedule = Some(schedule);
+                    break 'outer;
                 }
             }
-
-            let leg2_teams = inner_teams
-                .iter()
-                .filter(|team| match &bye_pair {
-                    Some((a, b)) => *team != a && *team != b,
-                    None => true,
-                })
-                .cloned()
-                .collect::<Vec<_>>();
-            let leg2_count = leg2_teams.len();
-            for i in 0..(leg2_count / 2) {
-                let game_time = *game_time_scheduler.current_time();
-                let home_team = leg2_teams[i].clone();
-                let away_team = leg2_teams[leg2_count - 1 - i].clone();
-                let game =
-                    Game::new_with_game_day(home_team, away_team, game_day, game_time, None)?;
-                schedule.push(game);
-                game_time_scheduler.try_advance();
-            }
-
-            Self::rotate_teams(&mut inner_teams);
         }
+
+        let schedule =
+            maybe_schedule.ok_or(AppError::InfeasibleDailyDoubleRoundRobin(teams.len()))?;
 
         if with_referees {
             return self.add_referees(schedule, teams);
@@ -118,12 +104,20 @@ impl RoundRobin {
         teams[1..].rotate_right(1);
     }
 
+    // Same eligibility rules as `add_referees` (not busy playing, not on
+    // bye that day, not already refereeing another game at that exact
+    // time), but where `add_referees` commits to a single greedy pass and
+    // stops, this also rebalances afterward: a purely greedy, myopic
+    // "assign whoever's currently least-used" pass can leave some team
+    // under-assigned overall even when a perfectly even split exists,
+    // since it has no look-ahead into which teams are about to become
+    // ineligible for a long stretch. The rebalancing pass repeatedly
+    // reassigns one game from the most-used team to the least-used team
+    // (whenever the least-used team happens to be eligible for one of the
+    // most-used team's games) until the spread is at most 1, or no more
+    // such swaps can be found (best-effort local search, not a globally
+    // optimal assignment).
     fn add_referees(&self, schedule: Vec<Game>, teams: &[Team]) -> Result<Vec<Game>, AppError> {
-        let mut schedule_with_referee = vec![];
-        let mut referee_count = HashMap::new();
-        for team in teams.iter() {
-            referee_count.insert(team, 0);
-        }
         let mut bye_team_by_day: HashMap<NaiveDate, &Team> = HashMap::new();
         for game in schedule.iter() {
             let day = game.get_game_day().date_naive();
@@ -136,25 +130,43 @@ impl RoundRobin {
         let mut busy_teams_set: HashMap<&DateTime<Tz>, Vec<&Team>> = HashMap::new();
         for game in schedule.iter() {
             let game_day = game.get_game_day();
-            // Teams are only busy for specific game time, not entire day
             busy_teams_set
                 .entry(game_day)
                 .or_default()
                 .extend([game.get_home_team(), game.get_away_team()]);
         }
 
-        for game in schedule.iter() {
-            if game.get_home_team().get_name() == "Bye" || game.get_away_team().get_name() == "Bye"
-            {
-                schedule_with_referee.push(game.clone());
-                continue;
-            }
-            let busy_teams = busy_teams_set.get(game.get_game_day()).unwrap();
+        let real_game_indices: Vec<usize> = schedule
+            .iter()
+            .enumerate()
+            .filter(|(_, game)| {
+                game.get_home_team().get_name() != "Bye" && game.get_away_team().get_name() != "Bye"
+            })
+            .map(|(index, _)| index)
+            .collect();
+
+        // Initial pass: identical in spirit to `add_referees`, assign each
+        // real game to the currently least-used eligible team.
+        let mut referee_count: HashMap<&Team, u32> = teams.iter().map(|team| (team, 0)).collect();
+        let mut referees_at_time: HashMap<&DateTime<Tz>, Vec<&Team>> = HashMap::new();
+        let mut assigned_referee: HashMap<usize, &Team> = HashMap::new();
+
+        for &index in &real_game_indices {
+            let game = &schedule[index];
+            let busy_teams = busy_teams_set
+                .get(game.get_game_day())
+                .expect("busy_teams_set was built from this same schedule, so every game's day is already a key");
+            let already_refereeing = referees_at_time
+                .get(game.get_game_day())
+                .cloned()
+                .unwrap_or_default();
             let day = game.get_game_day().date_naive();
             let eligible_teams = teams
                 .iter()
                 .filter(|team| {
-                    !busy_teams.contains(team) && bye_team_by_day.get(&day) != Some(team)
+                    !busy_teams.contains(team)
+                        && !already_refereeing.contains(team)
+                        && bye_team_by_day.get(&day) != Some(team)
                 })
                 .collect::<Vec<_>>();
 
@@ -163,11 +175,76 @@ impl RoundRobin {
             }
             let referee = *eligible_teams
                 .iter()
-                .min_by_key(|team| referee_count[*team])
-                .unwrap();
+                .min_by_key(|team| referee_count[**team])
+                .expect("eligible_teams is non-empty, checked above");
 
+            referees_at_time
+                .entry(game.get_game_day())
+                .or_default()
+                .push(referee);
             *referee_count.entry(referee).or_insert(0) += 1;
+            assigned_referee.insert(index, referee);
+        }
 
+        // Rebalancing pass. Bounded by schedule length: each successful
+        // swap strictly reduces the max-min spread by 2, so this can
+        // never run longer than that, and it stops early the moment no
+        // beneficial swap is found.
+        for _ in 0..real_game_indices.len() {
+            let (&max_team, &max_count) = referee_count
+                .iter()
+                .max_by_key(|(_, &count)| count)
+                .expect("teams is non-empty, checked in validate_parameters");
+            let (&min_team, &min_count) = referee_count
+                .iter()
+                .min_by_key(|(_, &count)| count)
+                .expect("teams is non-empty, checked in validate_parameters");
+
+            if max_count - min_count <= 1 {
+                break;
+            }
+
+            let swappable_index = real_game_indices.iter().copied().find(|index| {
+                if *assigned_referee
+                    .get(index)
+                    .expect("every real game was assigned a referee above")
+                    != max_team
+                {
+                    return false;
+                }
+                let game = &schedule[*index];
+                let day = game.get_game_day().date_naive();
+                !busy_teams_set[game.get_game_day()].contains(&min_team)
+                    && bye_team_by_day.get(&day) != Some(&min_team)
+                    && !referees_at_time[game.get_game_day()].contains(&min_team)
+            });
+
+            let Some(index) = swappable_index else {
+                // No game currently refereed by the most-used team can be
+                // handed to the least-used team without violating an
+                // eligibility rule. Stop rather than loop on a pair that
+                // can never be rebalanced.
+                break;
+            };
+
+            let game_day = schedule[index].get_game_day();
+            referees_at_time
+                .get_mut(game_day)
+                .expect("this game's day is already a key, populated during the initial pass")
+                .retain(|&team| team != max_team);
+            referees_at_time.entry(game_day).or_default().push(min_team);
+            *referee_count.entry(max_team).or_insert(0) -= 1;
+            *referee_count.entry(min_team).or_insert(0) += 1;
+            assigned_referee.insert(index, min_team);
+        }
+
+        let mut schedule_with_referee = Vec::with_capacity(schedule.len());
+        for (index, game) in schedule.into_iter().enumerate() {
+            let Some(&referee) = assigned_referee.get(&index) else {
+                // Bye entries were never assigned a referee above.
+                schedule_with_referee.push(game);
+                continue;
+            };
             let game = Game::new_with_game_day(
                 game.get_home_team().clone(),
                 game.get_away_team().clone(),
@@ -180,6 +257,236 @@ impl RoundRobin {
 
         Ok(schedule_with_referee)
     }
+
+    // Counts how many distinct game-time slots fit in a single day for the
+    // configured start time, break window, and time-between-games spacing,
+    // stopping at the same fixed hard-stop boundary GameTimeScheduler itself
+    // enforces. Uses a probe scheduler with 1 field, since this counts
+    // distinct TIME VALUES only; field capacity is factored in separately by
+    // the caller.
+    fn available_slots_per_day(&self, season_config: &SeasonConfig) -> u32 {
+        let mut probe = GameTimeScheduler::new(
+            season_config.start_time(),
+            season_config.time_between_games(),
+            1,
+            season_config.start_break(),
+            season_config.end_break(),
+        );
+
+        let mut slots = 0u32;
+        // Defensive iteration cap: nothing currently validates
+        // time_between_games > 0 anywhere in the codebase (pre-existing gap,
+        // out of scope here), and a zero duration would make try_advance
+        // never change current_time, which would otherwise loop forever.
+        for _ in 0..(24 * 60) {
+            if probe.is_past_hard_stop() {
+                break;
+            }
+            slots += 1;
+            probe.try_advance();
+        }
+
+        slots
+    }
+
+    // Generates a complete single round-robin: every pair of teams meets
+    // exactly once, and each team plays at most one game per day (one bye
+    // if the team count is odd), since only one leg's worth of games is
+    // scheduled per day here. This is the proven-correct core the
+    // eventual double round-robin is built from, by generating two of
+    // these (different team orders) and merging them.
+    fn generate_single_game_schedule(
+        &self,
+        teams: &[Team],
+        start_date: &NaiveDate,
+        season_config: &SeasonConfig,
+    ) -> Result<Vec<Game>, AppError> {
+        let mut rng = rand::rng();
+        let mut inner_teams = teams.to_vec();
+        if !inner_teams.len().is_multiple_of(2) {
+            inner_teams.push(Team::new("Bye", None));
+        }
+        inner_teams.shuffle(&mut rng);
+        let number_teams = inner_teams.len();
+
+        let mut schedule = Vec::with_capacity((number_teams - 1) * (number_teams / 2));
+
+        let mut game_day_scheduler = GameDayScheduler::new(start_date, season_config.game_days())?;
+        let mut game_time_scheduler = GameTimeScheduler::new(
+            season_config.start_time(),
+            season_config.time_between_games(),
+            season_config.number_fields(),
+            season_config.start_break(),
+            season_config.end_break(),
+        );
+
+        for _ in 0..number_teams - 1 {
+            game_time_scheduler.reset();
+
+            for i in 0..(number_teams / 2) {
+                game_day_scheduler.advance_if_past_hard_stop(&mut game_time_scheduler);
+                let game_day = *game_day_scheduler.current_day();
+                let game_time = *game_time_scheduler.current_time();
+                let home_team = inner_teams[i].clone();
+                let away_team = inner_teams[number_teams - 1 - i].clone();
+                let is_bye = home_team.get_name() == "Bye" || away_team.get_name() == "Bye";
+                let game =
+                    Game::new_with_game_day(home_team, away_team, game_day, game_time, None)?;
+                schedule.push(game);
+                if !is_bye {
+                    game_time_scheduler.try_advance();
+                }
+            }
+
+            game_day_scheduler.advance();
+            Self::rotate_teams(&mut inner_teams);
+        }
+
+        Ok(schedule)
+    }
+
+    // Merges two single-round-robin schedules (see `generate_single_game_schedule`)
+    // into one combined schedule where every active team plays twice per
+    // day. Rounds are matched by which team has the bye that day (or, if
+    // there's no bye at all, by the calendar day directly, since both
+    // passes then share the exact same day sequence with no team ever
+    // idle), so a team's bye absorbs both passes' idle round into one
+    // true day off rather than two separate ones. Returns None if any
+    // merged day would repeat the same pair in both halves — the two
+    // passes don't combine cleanly and the caller should try a fresh pair
+    // of schedules.
+    fn merge_schedules(
+        &self,
+        pass_a: Vec<Game>,
+        pass_b: Vec<Game>,
+        season_config: &SeasonConfig,
+    ) -> Option<Vec<Game>> {
+        let has_bye = pass_a.iter().any(is_bye_game);
+
+        let pass_a_days = group_by_day(pass_a);
+        let pass_b_days = group_by_day(pass_b);
+
+        let mut pass_b_by_bye: HashMap<String, Vec<Game>> = HashMap::new();
+        let mut pass_b_by_day: HashMap<NaiveDate, Vec<Game>> = HashMap::new();
+        if has_bye {
+            for (_, games) in pass_b_days {
+                let bye_name = bye_team_name(&games)
+                    .expect("every round has a bye team when the padded team count is odd")
+                    .to_owned();
+                pass_b_by_bye.insert(bye_name, games);
+            }
+        } else {
+            for (day, games) in pass_b_days {
+                pass_b_by_day.insert(day, games);
+            }
+        }
+
+        let mut merged = Vec::new();
+
+        for (day, games_a) in pass_a_days {
+            let games_b = if has_bye {
+                let bye_name = bye_team_name(&games_a)
+                    .expect("every round has a bye team when the padded team count is odd");
+                pass_b_by_bye.remove(bye_name).expect(
+                    "pass_b is a complete single round-robin, so every team has exactly one bye round",
+                )
+            } else {
+                pass_b_by_day.remove(&day).expect(
+                    "pass_a and pass_b share the same start date and game days, so their day sequences align exactly",
+                )
+            };
+
+            // A same-day rematch means these two passes don't combine cleanly.
+            let mut opponent_in_a: HashMap<&str, &str> = HashMap::new();
+            for game in games_a.iter().filter(|game| !is_bye_game(game)) {
+                opponent_in_a.insert(
+                    game.get_home_team().get_name(),
+                    game.get_away_team().get_name(),
+                );
+                opponent_in_a.insert(
+                    game.get_away_team().get_name(),
+                    game.get_home_team().get_name(),
+                );
+            }
+            for game in games_b.iter().filter(|game| !is_bye_game(game)) {
+                if opponent_in_a.get(game.get_home_team().get_name())
+                    == Some(&game.get_away_team().get_name())
+                {
+                    return None;
+                }
+            }
+
+            // Replay pass_a's own real games through a fresh scheduler to
+            // land on the exact state it ended the day in, so pass_b's
+            // games continue the same time sequence instead of also
+            // starting fresh at start_time. This never needs hard-stop
+            // awareness: validate_parameters already guarantees a single
+            // day has enough capacity for both legs combined.
+            let real_games_in_a = games_a.iter().filter(|game| !is_bye_game(game)).count();
+            let mut continuation = GameTimeScheduler::new(
+                season_config.start_time(),
+                season_config.time_between_games(),
+                season_config.number_fields(),
+                season_config.start_break(),
+                season_config.end_break(),
+            );
+            for _ in 0..real_games_in_a {
+                continuation.try_advance();
+            }
+
+            merged.extend(games_a);
+            // pass_a's own bye entry (kept above) already represents this
+            // day's bye, so pass_b's bye entry (if any) is redundant here.
+            for game in games_b.into_iter().filter(|game| !is_bye_game(game)) {
+                let new_time = *continuation.current_time();
+                let updated_game = Game::new_with_game_day(
+                    game.get_home_team().clone(),
+                    game.get_away_team().clone(),
+                    day,
+                    new_time,
+                    game.get_referee().clone(),
+                )
+                .ok()?;
+                merged.push(updated_game);
+                continuation.try_advance();
+            }
+        }
+
+        Some(merged)
+    }
+}
+
+fn is_bye_game(game: &Game) -> bool {
+    game.get_home_team().get_name() == "Bye" || game.get_away_team().get_name() == "Bye"
+}
+
+fn bye_team_name(games: &[Game]) -> Option<&str> {
+    games.iter().find_map(|game| {
+        let home = game.get_home_team().get_name();
+        let away = game.get_away_team().get_name();
+        if home == "Bye" {
+            Some(away)
+        } else if away == "Bye" {
+            Some(home)
+        } else {
+            None
+        }
+    })
+}
+
+// Groups games into calendar-day buckets, preserving day order. Relies on
+// games already being contiguous by day (true for anything produced by
+// `generate_single_game_schedule`, which only ever advances forward).
+fn group_by_day(games: Vec<Game>) -> Vec<(NaiveDate, Vec<Game>)> {
+    let mut groups: Vec<(NaiveDate, Vec<Game>)> = Vec::new();
+    for game in games {
+        let day = game.get_game_day().date_naive();
+        match groups.last_mut() {
+            Some((last_day, group)) if *last_day == day => group.push(game),
+            _ => groups.push((day, vec![game])),
+        }
+    }
+    groups
 }
 
 #[cfg(test)]
@@ -187,7 +494,7 @@ mod tests {
     use std::collections::{HashMap, HashSet};
 
     use super::*;
-    use chrono::{NaiveDate, Weekday};
+    use chrono::{Datelike, NaiveDate, Weekday};
 
     use crate::types::game_time::GameTime;
 
@@ -195,45 +502,33 @@ mod tests {
         NaiveDate::from_ymd_opt(2026, 5, 13).unwrap()
     }
 
-    fn teams() -> [Team; 5] {
-        [
-            Team::new("Morges Bandits", None),
-            Team::new("Yverdon Ducs", None),
-            Team::new("Lausanne Rockets", None),
-            Team::new("Team A", None),
-            Team::new("Team B", None),
-        ]
+    fn many_teams(count: usize) -> Vec<Team> {
+        (0..count)
+            .map(|i| Team::new(&format!("T{i}"), None))
+            .collect()
     }
 
     #[test]
     fn test_round_robin_parameter_validation_1() {
+        let season_config = SeasonConfig::new(
+            start_date(),
+            GameTime::new(9, 0).unwrap(),
+            GameTime::new(12, 0).unwrap(),
+            GameTime::new(13, 30).unwrap(),
+            GameTime::new(1, 30).unwrap(),
+            1,
+            vec![Weekday::Sat],
+        );
         let round_robin = RoundRobin;
 
-        let result = round_robin.validate_parameters(&teams(), 1);
+        let result = round_robin.validate_parameters(&many_teams(5), &season_config);
 
         assert!(result.is_ok(), "passed parameters are not valid");
     }
 
+    // Test case: fewer than 2 teams is rejected.
     #[test]
-    fn test_round_robin_parameter_validation_rejects_too_few_teams() {
-        let round_robin = RoundRobin;
-
-        let result = round_robin.validate_parameters(&[Team::new("Solo Team", None)], 1);
-
-        assert!(matches!(result, Err(AppError::NotEnoughTeams(1, 2))));
-    }
-
-    #[test]
-    fn test_round_robin_parameter_validation_rejects_zero_fields() {
-        let round_robin = RoundRobin;
-
-        let result = round_robin.validate_parameters(&teams(), 0);
-
-        assert!(matches!(result, Err(AppError::InvalidNumberOfFields(0))));
-    }
-
-    #[test]
-    fn compute_schedule_rejects_empty_teams() {
+    fn compute_schedule_rejects_fewer_than_two_teams() {
         let season_config = SeasonConfig::new(
             start_date(),
             GameTime::new(9, 0).unwrap(),
@@ -244,11 +539,13 @@ mod tests {
             vec![Weekday::Sat],
         );
 
-        let result = RoundRobin.compute_schedule(&[], &start_date(), &season_config, false);
+        let result =
+            RoundRobin.compute_schedule(&many_teams(1), &start_date(), &season_config, false);
 
-        assert!(matches!(result, Err(AppError::NotEnoughTeams(0, 2))));
+        assert!(matches!(result, Err(AppError::NotEnoughTeams(1, 4))));
     }
 
+    // Test case: zero fields is rejected.
     #[test]
     fn compute_schedule_rejects_zero_fields() {
         let season_config = SeasonConfig::new(
@@ -261,22 +558,62 @@ mod tests {
             vec![Weekday::Sat],
         );
 
-        let result = RoundRobin.compute_schedule(&teams(), &start_date(), &season_config, false);
+        let result =
+            RoundRobin.compute_schedule(&many_teams(5), &start_date(), &season_config, false);
 
         assert!(matches!(result, Err(AppError::InvalidNumberOfFields(0))));
     }
 
+    // Test case: the season's daily time window is too tight to fit both
+    // legs' games, even with ample fields.
     #[test]
-    fn test_round_robin_parameter_validation_2() {
-        let round_robin = RoundRobin;
+    fn compute_schedule_rejects_insufficient_daily_capacity() {
+        let teams = many_teams(8);
+        let season_config = SeasonConfig::new(
+            start_date(),
+            GameTime::new(16, 0).unwrap(),
+            GameTime::new(12, 0).unwrap(),
+            GameTime::new(12, 30).unwrap(),
+            GameTime::new(1, 0).unwrap(),
+            1,
+            vec![Weekday::Sat],
+        );
 
-        let result = round_robin.validate_parameters(&teams(), 1);
+        let result = RoundRobin.compute_schedule(&teams, &start_date(), &season_config, false);
 
-        assert!(result.is_ok(), "passed parameters are not valid");
+        assert!(matches!(
+            result,
+            Err(AppError::InsufficientDailyCapacity(8, 2))
+        ));
     }
 
+    // Test case: referees requested with too few eligible teams to cover a
+    // game. With the smallest valid team count (4) and 2 fields, both of a
+    // leg's games always land in the same time slot, meaning all 4 teams
+    // are playing simultaneously and nobody is left to referee either one.
     #[test]
-    fn test_round_robin_schedule() {
+    fn compute_schedule_rejects_when_no_eligible_referees_remain() {
+        let teams = many_teams(4);
+        let season_config = SeasonConfig::new(
+            start_date(),
+            GameTime::new(9, 0).unwrap(),
+            GameTime::new(12, 0).unwrap(),
+            GameTime::new(13, 30).unwrap(),
+            GameTime::new(1, 30).unwrap(),
+            2,
+            vec![Weekday::Sat],
+        );
+
+        let result = RoundRobin.compute_schedule(&teams, &start_date(), &season_config, true);
+
+        assert!(matches!(result, Err(AppError::EmptyEligibleReferees)));
+    }
+
+    // Test case: the smallest valid team count (4) — the current minimum
+    // below which validate_parameters rejects for pairing infeasibility.
+    #[test]
+    fn test_smallest_valid_team_count() {
+        let teams = many_teams(4);
         let season_config = SeasonConfig::new(
             start_date(),
             GameTime::new(9, 0).unwrap(),
@@ -287,83 +624,43 @@ mod tests {
             vec![Weekday::Sat],
         );
 
-        let round_robin = RoundRobin;
+        let schedule = RoundRobin
+            .compute_schedule(&teams, &start_date(), &season_config, false)
+            .unwrap();
 
-        let maybe_schedule = round_robin.compute_schedule(
-            &teams(),
-            season_config.start_date(),
-            &season_config,
-            true,
-        );
-
-        assert!(maybe_schedule.is_ok(), "{maybe_schedule:#?}");
-
-        let schedule = maybe_schedule.unwrap();
-
-        // Total number of real games is computed using:
-        // N * (N - 1)
-        // Plus 1 bye game per teams which results in:
-        // N * N
-        let expecte_total_number_games = teams().len() * teams().len();
-
-        assert_eq!(schedule.len(), expecte_total_number_games);
-
-        assert_schedule(&schedule, &teams(), season_config.number_fields());
+        assert_schedule(&schedule, &teams, &start_date(), &season_config, false);
     }
 
+    // Test case: exactly 5 teams. Proven earlier (an exhaustive search over
+    // every possible pairing) to be mathematically impossible for this
+    // two-pass construction to merge without a same-day rematch, no matter
+    // how many shuffles are tried, so this should deterministically exhaust
+    // the retry budget and fail, rather than just being unlikely to succeed.
     #[test]
-    fn test_real_scenario() {
-        let teams = [
-            Team::new("Riviera Saints", None),
-            Team::new("Fribourg Cardinals", None),
-            Team::new("Suzerains", None),
-            Team::new("Geneva Whoppers", None),
-            Team::new("Lausanne Owls", None),
-            Team::new("Monthey Rhinos", None),
-            Team::new("Morges Bandits", None),
-            Team::new("Yverdon Ducs", None),
-            Team::new("Lausanne Rockets", None),
-        ];
+    fn compute_schedule_rejects_infeasible_five_teams() {
+        let teams = many_teams(5);
         let season_config = SeasonConfig::new(
             start_date(),
             GameTime::new(9, 0).unwrap(),
             GameTime::new(12, 0).unwrap(),
-            GameTime::new(14, 0).unwrap(),
+            GameTime::new(20, 0).unwrap(),
             GameTime::new(1, 30).unwrap(),
             2,
-            vec![Weekday::Sat],
+            vec![Weekday::Wed, Weekday::Sat],
         );
 
-        let round_robin = RoundRobin;
+        let result = RoundRobin.compute_schedule(&teams, &start_date(), &season_config, false);
 
-        let maybe_schedule =
-            round_robin.compute_schedule(&teams, season_config.start_date(), &season_config, true);
-
-        assert!(maybe_schedule.is_ok());
-
-        let schedule = maybe_schedule.unwrap();
-
-        // Total number of games is computed using:
-        // N * (N - 1)
-        // Plus 1 bye game per teams which results in:
-        // N * N
-        let expecte_total_number_games = teams.len() * teams.len();
-
-        assert_eq!(schedule.len(), expecte_total_number_games);
-
-        assert_schedule(&schedule, &teams, season_config.number_fields());
+        assert!(matches!(
+            result,
+            Err(AppError::InfeasibleDailyDoubleRoundRobin(_))
+        ));
     }
 
+    // Test case: an even number of teams.
     #[test]
-    fn test_even_team_count_no_bye_needed() {
-        let teams = [
-            Team::new("A", None),
-            Team::new("B", None),
-            Team::new("C", None),
-            Team::new("D", None),
-            Team::new("E", None),
-            Team::new("F", None),
-        ];
+    fn test_even_team_count() {
+        let teams = many_teams(6);
         let season_config = SeasonConfig::new(
             start_date(),
             GameTime::new(9, 0).unwrap(),
@@ -375,31 +672,332 @@ mod tests {
         );
 
         let schedule = RoundRobin
-            .compute_schedule(&teams, season_config.start_date(), &season_config, false)
+            .compute_schedule(&teams, &start_date(), &season_config, false)
             .unwrap();
 
-        // No bye is needed for an even team count, so every game is a real
-        // pairing: N * (N - 1) total, every pair meeting exactly twice.
-        assert_eq!(schedule.len(), teams.len() * (teams.len() - 1));
-        assert!(
-            schedule
-                .iter()
-                .all(|game| game.get_home_team().get_name() != "Bye"
-                    && game.get_away_team().get_name() != "Bye"),
-            "an even team count should never need a bye game"
+        assert_schedule(&schedule, &teams, &start_date(), &season_config, false);
+    }
+
+    // Test case: referees requested (also covers an odd team count — this
+    // config is otherwise identical to what a dedicated odd-team-count
+    // test would use, and with_referees: true exercises everything a
+    // referee-less run would check, plus the referee assertions).
+    #[test]
+    fn test_referees_requested() {
+        let teams = many_teams(9);
+        let season_config = SeasonConfig::new(
+            start_date(),
+            GameTime::new(9, 0).unwrap(),
+            GameTime::new(12, 0).unwrap(),
+            GameTime::new(14, 0).unwrap(),
+            GameTime::new(1, 30).unwrap(),
+            2,
+            vec![Weekday::Sat],
         );
 
-        let mut pair_counts: HashMap<(String, String), u32> = HashMap::new();
+        let schedule = RoundRobin
+            .compute_schedule(&teams, &start_date(), &season_config, true)
+            .unwrap();
+
+        assert_schedule(&schedule, &teams, &start_date(), &season_config, true);
+    }
+
+    // Test case: a single field configured, the tightest possible
+    // field-capacity pressure (no two games anywhere can share a time slot).
+    #[test]
+    fn test_single_field() {
+        let teams = many_teams(8);
+        let season_config = SeasonConfig::new(
+            start_date(),
+            GameTime::new(9, 0).unwrap(),
+            GameTime::new(12, 0).unwrap(),
+            GameTime::new(14, 0).unwrap(),
+            GameTime::new(1, 0).unwrap(),
+            1,
+            vec![Weekday::Wed, Weekday::Sat],
+        );
+
+        let schedule = RoundRobin
+            .compute_schedule(&teams, &start_date(), &season_config, false)
+            .unwrap();
+
+        assert_schedule(&schedule, &teams, &start_date(), &season_config, false);
+    }
+
+    // Test case: 2 fields configured.
+    #[test]
+    fn test_two_fields() {
+        let teams = many_teams(8);
+        let season_config = SeasonConfig::new(
+            start_date(),
+            GameTime::new(9, 0).unwrap(),
+            GameTime::new(12, 0).unwrap(),
+            GameTime::new(14, 0).unwrap(),
+            GameTime::new(1, 30).unwrap(),
+            2,
+            vec![Weekday::Sat],
+        );
+
+        let schedule = RoundRobin
+            .compute_schedule(&teams, &start_date(), &season_config, false)
+            .unwrap();
+
+        assert_schedule(&schedule, &teams, &start_date(), &season_config, false);
+    }
+
+    // Test case: multiple game days configured (more than one weekday
+    // allowed), so the schedule actually has to rotate between them.
+    #[test]
+    fn test_multiple_game_days() {
+        let teams = many_teams(7);
+        let season_config = SeasonConfig::new(
+            start_date(),
+            GameTime::new(9, 0).unwrap(),
+            GameTime::new(12, 0).unwrap(),
+            GameTime::new(13, 30).unwrap(),
+            GameTime::new(1, 30).unwrap(),
+            2,
+            vec![Weekday::Wed, Weekday::Sat, Weekday::Sun],
+        );
+
+        let schedule = RoundRobin
+            .compute_schedule(&teams, &start_date(), &season_config, false)
+            .unwrap();
+
+        let days_used: HashSet<Weekday> = schedule
+            .iter()
+            .map(|game| game.get_game_day().weekday())
+            .collect();
+        assert!(
+            days_used.len() > 1,
+            "expected the schedule to actually use more than one configured weekday"
+        );
+
+        assert_schedule(&schedule, &teams, &start_date(), &season_config, false);
+    }
+
+    // Test case: a break window that actually falls within the game-time
+    // range, so at least one time slot has to jump over it instead of
+    // landing inside it.
+    #[test]
+    fn test_break_window_within_game_time_range() {
+        let teams = many_teams(8);
+        let season_config = SeasonConfig::new(
+            start_date(),
+            GameTime::new(9, 0).unwrap(),
+            GameTime::new(11, 0).unwrap(),
+            GameTime::new(12, 30).unwrap(),
+            GameTime::new(1, 0).unwrap(),
+            2,
+            vec![Weekday::Sat],
+        );
+
+        let schedule = RoundRobin
+            .compute_schedule(&teams, &start_date(), &season_config, false)
+            .unwrap();
+
+        assert_schedule(&schedule, &teams, &start_date(), &season_config, false);
+    }
+
+    fn assert_schedule(
+        schedule: &[Game],
+        teams: &[Team],
+        start_date: &NaiveDate,
+        season_config: &SeasonConfig,
+        with_referees: bool,
+    ) {
+        let is_odd = !teams.len().is_multiple_of(2);
+
+        let input_names: HashSet<&str> = teams.iter().map(Team::get_name).collect();
+        assert_eq!(
+            teams.len(),
+            input_names.len(),
+            "input teams have duplicate names"
+        );
+        let input_team_set: HashSet<&Team> = teams.iter().collect();
+
+        // The total game count matches the expected formula for the given
+        // team count: N * (N - 1) real games (every pair meets twice), plus
+        // one bye game per team when the count is odd.
+        let expected_total = if is_odd {
+            teams.len() * teams.len()
+        } else {
+            teams.len() * (teams.len() - 1)
+        };
+        assert_eq!(
+            schedule.len(),
+            expected_total,
+            "unexpected total game count"
+        );
+
+        let schedule_team_names: HashSet<&str> = schedule
+            .iter()
+            .flat_map(|game| [game.get_home_team(), game.get_away_team()])
+            .map(Team::get_name)
+            .filter(|&name| name != "Bye")
+            .collect();
+
+        // Every input team appears in the generated schedule.
+        assert_eq!(
+            schedule_team_names, input_names,
+            "not every input team appears in the schedule"
+        );
+
+        // Team identities (names/seeds) are preserved unchanged from input
+        // to output.
         for game in schedule.iter() {
-            let mut names = [
-                game.get_home_team().get_name().to_owned(),
-                game.get_away_team().get_name().to_owned(),
-            ];
-            names.sort();
-            *pair_counts
-                .entry((names[0].clone(), names[1].clone()))
-                .or_insert(0) += 1;
+            for team in [game.get_home_team(), game.get_away_team()] {
+                if team.get_name() != "Bye" {
+                    assert!(
+                        input_team_set.contains(team),
+                        "team {team:?} in the schedule doesn't match any input team exactly"
+                    );
+                }
+            }
         }
+
+        let mut bye_weeks: HashMap<&str, u32> = HashMap::new();
+        let mut computed_game_days: HashMap<&DateTime<Tz>, u32> = HashMap::new();
+        let mut team_real_game_days: HashMap<&str, HashSet<NaiveDate>> = HashMap::new();
+        let mut team_bye_days: HashMap<&str, NaiveDate> = HashMap::new();
+        let mut times_by_day: HashMap<NaiveDate, HashSet<GameTime>> = HashMap::new();
+        let mut pair_counts: HashMap<(String, String), u32> = HashMap::new();
+        let mut pair_days: HashMap<(String, String), HashSet<NaiveDate>> = HashMap::new();
+
+        for game in schedule.iter() {
+            let home_team = game.get_home_team();
+            let away_team = game.get_away_team();
+            let game_day = game.get_game_day();
+            let day = game_day.date_naive();
+
+            // No team is ever scheduled to play itself.
+            assert_ne!(home_team, away_team, "a team was scheduled against itself");
+
+            // Games only fall on the configured days of the week.
+            assert!(
+                season_config.game_days().contains(&game_day.weekday()),
+                "game on {day} falls on a day of the week not in the configured game days"
+            );
+
+            // No game is scheduled before the configured season start date.
+            assert!(
+                day >= *start_date,
+                "game on {day} is scheduled before the season start date {start_date}"
+            );
+
+            let is_bye = home_team.get_name() == "Bye" || away_team.get_name() == "Bye";
+            if !is_bye {
+                *computed_game_days.entry(game_day).or_insert(0) += 1;
+                team_real_game_days
+                    .entry(home_team.get_name())
+                    .or_default()
+                    .insert(day);
+                team_real_game_days
+                    .entry(away_team.get_name())
+                    .or_default()
+                    .insert(day);
+
+                let game_time = game
+                    .get_game_time()
+                    .expect("a real game's time should always be extractable");
+
+                // No game is scheduled inside the configured break window.
+                assert!(
+                    !(game_time > *season_config.start_break()
+                        && game_time < *season_config.end_break()),
+                    "game at {game_time} on {day} falls inside the break window"
+                );
+
+                times_by_day.entry(day).or_default().insert(game_time);
+
+                let mut names = [
+                    home_team.get_name().to_owned(),
+                    away_team.get_name().to_owned(),
+                ];
+                names.sort();
+                let key = (names[0].clone(), names[1].clone());
+                *pair_counts.entry(key.clone()).or_insert(0) += 1;
+                pair_days.entry(key).or_default().insert(day);
+
+                if with_referees {
+                    assert!(
+                        game.get_referee().is_some(),
+                        "real game on {day} at {game_time} has no referee assigned"
+                    );
+                    let referee = game
+                        .get_referee()
+                        .as_ref()
+                        .expect("checked above that a referee is present");
+                    // A referee is never assigned to a game one of their own
+                    // teams is playing in.
+                    assert_ne!(referee, home_team, "referee is playing in their own game");
+                    assert_ne!(referee, away_team, "referee is playing in their own game");
+                }
+            } else {
+                let bye_team_name = if home_team.get_name() == "Bye" {
+                    away_team.get_name()
+                } else {
+                    home_team.get_name()
+                };
+                *bye_weeks.entry(bye_team_name).or_insert(0) += 1;
+                team_bye_days.insert(bye_team_name, day);
+            }
+        }
+
+        // An odd number of teams gives every team exactly one bye; an even
+        // number of teams never produces a bye.
+        if is_odd {
+            assert_eq!(bye_weeks.len(), teams.len(), "not every team has a bye");
+            assert!(
+                bye_weeks.values().all(|&count| count == 1),
+                "every team should have exactly one bye"
+            );
+        } else {
+            assert!(
+                bye_weeks.is_empty(),
+                "an even team count should never produce a bye"
+            );
+        }
+
+        // No team plays a real game on the same day as its own bye.
+        for (team, bye_day) in team_bye_days.iter() {
+            assert!(
+                !team_real_game_days
+                    .get(team)
+                    .is_some_and(|days| days.contains(bye_day)),
+                "team {team} has a real game scheduled on its bye day {bye_day}"
+            );
+        }
+
+        // No two games share the same date and time beyond the number of
+        // available fields.
+        assert!(
+            computed_game_days
+                .values()
+                .all(|&count| count <= season_config.number_fields()),
+            "some time slot has more games than the configured number of fields"
+        );
+
+        // Consecutive games on the same day respect the configured spacing
+        // between games (the gap can be larger, e.g. when it jumps over the
+        // break window, but never smaller).
+        for (day, times) in times_by_day.iter() {
+            let mut sorted_times: Vec<GameTime> = times.iter().copied().collect();
+            sorted_times.sort();
+            for pair in sorted_times.windows(2) {
+                assert!(
+                    pair[0] + *season_config.time_between_games() <= pair[1],
+                    "games on {day} at {} and {} are closer together than the configured spacing",
+                    pair[0],
+                    pair[1]
+                );
+            }
+        }
+
+        // Every unique real (non-bye) pair should face each other exactly
+        // twice across the season, no pair skipped, none repeated unevenly,
+        // and on two different calendar days, not an immediate same-day
+        // rematch.
         for i in 0..teams.len() {
             for j in (i + 1)..teams.len() {
                 let mut names = [
@@ -411,124 +1009,71 @@ mod tests {
                 assert_eq!(
                     pair_counts.get(&key).copied().unwrap_or(0),
                     2,
-                    "pair {key:?} should meet exactly twice"
-                );
-            }
-        }
-    }
-
-    fn assert_schedule(schedule: &[Game], teams: &[Team], number_of_fields: u32) {
-        let all_unique_teams = HashSet::<String>::from_iter(
-            teams
-                .iter()
-                .map(|team| team.get_name().to_owned())
-                .collect::<Vec<String>>(),
-        );
-        assert_eq!(teams.len(), all_unique_teams.len());
-        let only_unique_teams = all_unique_teams
-            .iter()
-            .filter(|&team| team != "Bye")
-            .collect::<Vec<_>>();
-
-        let mut bye_weeks = HashMap::new();
-        let mut computed_game_days = HashMap::new();
-        let mut team_real_game_days: HashMap<&str, HashSet<NaiveDate>> = HashMap::new();
-        let mut team_bye_days: HashMap<&str, NaiveDate> = HashMap::new();
-
-        for game in schedule.iter() {
-            let home_team = game.get_home_team();
-            let away_team = game.get_away_team();
-            let game_day = game.get_game_day();
-            assert!(home_team.get_name() != "Bye" || away_team.get_name() != "Bye");
-
-            // Record only non bye week games
-            if home_team.get_name() != "Bye" && away_team.get_name() != "Bye" {
-                match computed_game_days.get(game_day) {
-                    Some(count) => {
-                        computed_game_days.insert(game_day, count + 1);
-                    }
-                    None => {
-                        computed_game_days.insert(game_day, 1);
-                    }
-                }
-                team_real_game_days
-                    .entry(home_team.get_name())
-                    .or_default()
-                    .insert(game_day.date_naive());
-                team_real_game_days
-                    .entry(away_team.get_name())
-                    .or_default()
-                    .insert(game_day.date_naive());
-            }
-
-            if home_team.get_name() == "Bye" {
-                match bye_weeks.get(away_team.get_name()) {
-                    Some(count) => bye_weeks.insert(away_team.get_name(), count + 1),
-                    None => bye_weeks.insert(away_team.get_name(), 1),
-                };
-                team_bye_days.insert(away_team.get_name(), game_day.date_naive());
-            }
-
-            if away_team.get_name() == "Bye" {
-                match bye_weeks.get(home_team.get_name()) {
-                    Some(count) => bye_weeks.insert(home_team.get_name(), count + 1),
-                    None => bye_weeks.insert(home_team.get_name(), 1),
-                };
-                team_bye_days.insert(home_team.get_name(), game_day.date_naive());
-            }
-        }
-
-        assert_eq!(bye_weeks.keys().len(), only_unique_teams.len());
-        assert!(
-            bye_weeks.values().all(|&value| value == 1),
-            "All teams should only have 1 bye week"
-        );
-        for (team, bye_day) in team_bye_days.iter() {
-            assert!(
-                !team_real_game_days
-                    .get(team)
-                    .is_some_and(|days| days.contains(bye_day)),
-                "team {team} has a real game scheduled on its bye day {bye_day}"
-            );
-        }
-        assert!(
-            computed_game_days
-                .values()
-                .all(|&value| value <= number_of_fields),
-            "All game days should have a maximum of '{}' games per date/time",
-            number_of_fields
-        );
-
-        // Every unique real (non-bye) pair should face each other exactly
-        // twice across the season, no pair skipped, none repeated unevenly.
-        let mut pair_counts: HashMap<(String, String), u32> = HashMap::new();
-        for game in schedule.iter() {
-            let home_team = game.get_home_team();
-            let away_team = game.get_away_team();
-            if home_team.get_name() == "Bye" || away_team.get_name() == "Bye" {
-                continue;
-            }
-            let mut names = [
-                home_team.get_name().to_owned(),
-                away_team.get_name().to_owned(),
-            ];
-            names.sort();
-            let key = (names[0].clone(), names[1].clone());
-            *pair_counts.entry(key).or_insert(0) += 1;
-        }
-
-        for i in 0..only_unique_teams.len() {
-            for j in (i + 1)..only_unique_teams.len() {
-                let mut names = [only_unique_teams[i].clone(), only_unique_teams[j].clone()];
-                names.sort();
-                let key = (names[0].clone(), names[1].clone());
-                assert_eq!(
-                    pair_counts.get(&key).copied().unwrap_or(0),
-                    2,
                     "pair {key:?} should meet exactly twice, met {:?} times",
                     pair_counts.get(&key)
                 );
+                assert_eq!(
+                    pair_days.get(&key).map(HashSet::len).unwrap_or(0),
+                    2,
+                    "pair {key:?} should meet on two different days, met on {:?}",
+                    pair_days.get(&key)
+                );
             }
+        }
+
+        // The season fits within a reasonable number of calendar days, a
+        // flat, deliberately generous sanity bound (not scaled to team
+        // count or field count, since low field counts can legitimately
+        // stretch a season a long way) just to catch a genuine
+        // runaway/infinite scheduling bug (e.g. a date-arithmetic bug
+        // producing a wildly wrong jump), not a tight timing requirement.
+        if let (Some(first), Some(last)) = (
+            schedule
+                .iter()
+                .map(|game| game.get_game_day().date_naive())
+                .min(),
+            schedule
+                .iter()
+                .map(|game| game.get_game_day().date_naive())
+                .max(),
+        ) {
+            let span_days = (last - first).num_days();
+            assert!(
+                span_days <= 3650,
+                "season spans an unreasonable number of days ({span_days}) for {} teams",
+                teams.len()
+            );
+        }
+
+        // Referee assignments are spread as evenly as possible across
+        // eligible teams over the season, and a referee is never scheduled
+        // to referee two games happening at the same time.
+        if with_referees {
+            let mut referee_counts: HashMap<&str, u32> =
+                teams.iter().map(|team| (team.get_name(), 0)).collect();
+            let mut referees_at_time: HashMap<&DateTime<Tz>, HashSet<&str>> = HashMap::new();
+            for game in schedule.iter() {
+                if let Some(referee) = game.get_referee() {
+                    *referee_counts.entry(referee.get_name()).or_insert(0) += 1;
+
+                    let already_refereeing = !referees_at_time
+                        .entry(game.get_game_day())
+                        .or_default()
+                        .insert(referee.get_name());
+                    assert!(
+                        !already_refereeing,
+                        "{} was assigned as referee for two games at {}",
+                        referee.get_name(),
+                        game.get_game_day()
+                    );
+                }
+            }
+            let min_count = referee_counts.values().min().copied().unwrap_or(0);
+            let max_count = referee_counts.values().max().copied().unwrap_or(0);
+            assert!(
+                max_count - min_count <= 2,
+                "referee assignments are not evenly spread: counts range from {min_count} to {max_count}"
+            );
         }
     }
 }
