@@ -224,7 +224,7 @@ mod tests {
     use std::collections::{HashMap, HashSet};
 
     use super::*;
-    use chrono::Weekday;
+    use chrono::{Datelike, Weekday};
 
     use crate::types::game_time::GameTime;
 
@@ -355,8 +355,10 @@ mod tests {
         assert!(matches!(result, Err(AppError::InvalidNumberOfFields(0))));
     }
 
+    // No game days configured means GameDayScheduler can never find a
+    // valid starting day.
     #[test]
-    fn test_single_elimination_valid_parameter_validation_2() {
+    fn compute_schedule_rejects_empty_game_days() {
         let season_config = SeasonConfig::new(
             start_date(),
             GameTime::new(9, 0).unwrap(),
@@ -364,13 +366,17 @@ mod tests {
             GameTime::new(13, 30).unwrap(),
             GameTime::new(1, 30).unwrap(),
             1,
-            vec![Weekday::Sat],
+            vec![],
         );
-        let single_elimination = SingleElimination::new(false);
 
-        let result = single_elimination.validate_parameters(&teams(), &season_config);
+        let result = SingleElimination::new(false).compute_schedule(
+            &teams(),
+            &start_date(),
+            &season_config,
+            false,
+        );
 
-        assert!(result.is_ok(), "passed parameters should be valid");
+        assert!(matches!(result, Err(AppError::EmptyGameDays)));
     }
 
     #[test]
@@ -480,6 +486,67 @@ mod tests {
             GameTime::new(1, 30).unwrap(),
             1,
             vec![Weekday::Wed, Weekday::Sat],
+        );
+
+        let schedule = SingleElimination::new(false)
+            .compute_schedule(&teams, &start_date(), &season_config, false)
+            .unwrap();
+
+        // The bracket spans several rounds, each advancing the day, so it
+        // should actually rotate across both configured weekdays rather
+        // than only ever landing on one of them.
+        let days_used: HashSet<Weekday> = schedule
+            .iter()
+            .map(|game| game.get_game_day().weekday())
+            .collect();
+        assert!(
+            days_used.len() > 1,
+            "expected the schedule to actually use more than one configured weekday"
+        );
+
+        assert_schedule(&schedule, &teams, season_config.number_fields());
+    }
+
+    // The large-bracket capacity test above happens to use a power-of-two
+    // team count (32, zero byes), so it never exercises round 2's
+    // bye-recipient-pairing loop (which also calls
+    // advance_if_past_hard_stop) under real field-capacity pressure. 20
+    // teams needs a bracket of 32 with 12 byes, giving round 2 real work
+    // to do under the same tight, 1-field window.
+    #[test]
+    fn test_round_2_respects_single_field_capacity() {
+        let teams: Vec<Team> = (0..20).map(|i| Team::new(&format!("T{i}"), None)).collect();
+        let season_config = SeasonConfig::new(
+            start_date(),
+            GameTime::new(9, 0).unwrap(),
+            GameTime::new(12, 0).unwrap(),
+            GameTime::new(20, 0).unwrap(),
+            GameTime::new(1, 30).unwrap(),
+            1,
+            vec![Weekday::Wed, Weekday::Sat],
+        );
+
+        let schedule = SingleElimination::new(false)
+            .compute_schedule(&teams, &start_date(), &season_config, false)
+            .unwrap();
+
+        assert_schedule(&schedule, &teams, season_config.number_fields());
+    }
+
+    // A break window that actually falls within the game-time range, so
+    // at least one time slot has to jump over it instead of landing
+    // inside it.
+    #[test]
+    fn test_break_window_within_game_time_range() {
+        let teams = teams_bigger();
+        let season_config = SeasonConfig::new(
+            start_date(),
+            GameTime::new(9, 0).unwrap(),
+            GameTime::new(11, 0).unwrap(),
+            GameTime::new(12, 30).unwrap(),
+            GameTime::new(1, 0).unwrap(),
+            2,
+            vec![Weekday::Sat],
         );
 
         let schedule = SingleElimination::new(false)
