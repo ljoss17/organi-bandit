@@ -3,6 +3,7 @@
     "browse-teams": "Parcourir le fichier d'équipes...",
     "cancel": "Annuler",
     "changelog-button": "Nouveautés",
+    "changelog-error": "Impossible de charger les nouveautés :",
     "changelog-title": "Nouveautés",
     "day-friday": "Vendredi",
     "day-monday": "Lundi",

@@ -3,6 +3,7 @@
     "browse-teams": "Browse teams file...",
     "cancel": "Cancel",
     "changelog-button": "What's new",
+    "changelog-error": "Couldn't load the changelog:",
     "changelog-title": "What's new",
     "day-friday": "Friday",
     "day-monday": "Monday",

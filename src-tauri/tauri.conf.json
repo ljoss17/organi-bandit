@@ -32,7 +32,7 @@
     ],
     "resources": {
       "resources/teams.json": "resources/teams.json",
-      "../CHANGELOG.md": "CHANGELOG.md"
+      "resources/CHANGELOG.md": "CHANGELOG.md"
     }
   },
   "plugins": {

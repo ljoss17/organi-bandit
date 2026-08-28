@@ -70,7 +70,11 @@ function parseChangelog(markdown) {
   let currentVersion = null;
   let currentCategory = null;
 
-  markdown.split("\n").forEach((line) => {
+  // Split on CRLF or LF: a trailing \r left on each line (e.g. when the
+  // bundled file was checked out with Windows line endings) would
+  // otherwise make every regex below fail silently, since `.` doesn't
+  // match `\r`.
+  markdown.split(/\r\n|\n/).forEach((line) => {
     const versionMatch = line.match(/^## \[(.+?)\] - (.+)$/);
     if (versionMatch) {
       currentVersion = { version: versionMatch[1], date: versionMatch[2], categories: [] };
@@ -131,6 +135,12 @@ document.getElementById("show-changelog").addEventListener("click", async () => 
     renderChangelog(parseChangelog(raw).slice(0, 3));
   } catch (error) {
     console.error("Failed to load changelog:", error);
+    const container = document.getElementById("changelog-body");
+    container.innerHTML = "";
+    const message = document.createElement("p");
+    message.className = "changelog-error";
+    message.textContent = `${t("changelog-error")} ${error}`;
+    container.appendChild(message);
   }
   document.getElementById("changelog-modal").hidden = false;
 });

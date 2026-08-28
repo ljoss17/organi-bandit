@@ -1,0 +1,13 @@
+# Normalize line endings to LF for text files, regardless of platform or
+# a checkout runner's core.autocrlf setting (GitHub's windows-latest
+# runners default to true, which silently converts files like
+# CHANGELOG.md to CRLF on checkout — this bit the in-app changelog viewer,
+# since it gets bundled as a Tauri resource and read back verbatim).
+* text=auto eol=lf
+
+# Never touch binary files.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.ico binary
+*.icns binary
