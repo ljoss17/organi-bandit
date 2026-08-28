@@ -123,8 +123,8 @@ impl Tournament for SingleElimination {
         // round-1 real games left over after that play each other, using the same WinnerA/WinnerB
         // placeholder names later rounds use, since neither side is known yet.
         let bye_recipients = &inner_teams[..number_of_byes];
-        let mut bye_recipient_pairs = bye_recipients.chunks_exact(2);
-        for pair in &mut bye_recipient_pairs {
+        let bye_recipient_pairs = bye_recipients.as_chunks::<2>();
+        for pair in &mut bye_recipient_pairs.0.iter() {
             game_day_scheduler.advance_if_past_hard_stop(&mut game_time_scheduler);
             let home_team = pair[0].clone();
             let away_team = pair[1].clone();
@@ -142,7 +142,7 @@ impl Tournament for SingleElimination {
         }
 
         let mut winner_previous_slots = first_real_round_games;
-        if let [leftover_bye_recipient] = bye_recipient_pairs.remainder() {
+        if let [leftover_bye_recipient] = bye_recipient_pairs.1 {
             game_day_scheduler.advance_if_past_hard_stop(&mut game_time_scheduler);
             let home_team = leftover_bye_recipient.clone();
             let away_team = Team::new("WinnerPrevious", None);
