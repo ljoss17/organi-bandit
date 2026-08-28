@@ -77,3 +77,5 @@ A `.xlsx` file listing every game of the season — group stage and playoffs —
 ## License
 
 Licensed under either of [MIT](LICENSE-MIT) or [Apache License, Version 2.0](LICENSE-APACHE) at your option.
+
+The Morges Bandits logo (the application icon and in-app branding) is the property of the Morges Bandits club and is used with their permission. It is not covered by the license above — please don't reuse it outside this project without the club's consent.
