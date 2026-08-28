@@ -1,5 +1,9 @@
 # Organi-Bandit
 
+[![Tests](https://github.com/ljoss17/organi-bandit/actions/workflows/tests.yml/badge.svg)](https://github.com/ljoss17/organi-bandit/actions/workflows/tests.yml)
+[![Latest release](https://img.shields.io/github/v/release/ljoss17/organi-bandit)](https://github.com/ljoss17/organi-bandit/releases)
+[![License: MIT OR Apache-2.0](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue)](#license)
+
 A desktop application that generates a flag football season schedule as a spreadsheet. Configure your teams and a few scheduling parameters, and it produces a `.xlsx` file listing every game of the season — a round-robin group stage followed by a single-elimination playoff.
 
 ## What it does
