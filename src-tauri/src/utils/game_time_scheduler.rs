@@ -8,6 +8,7 @@ pub struct GameTimeScheduler<'a> {
     current_games_per_time: u32,
     start_break: GameTime,
     end_break: GameTime,
+    hard_stop: GameTime,
 }
 
 impl<'a> GameTimeScheduler<'a> {
@@ -18,6 +19,19 @@ impl<'a> GameTimeScheduler<'a> {
         start_break: &'a GameTime,
         end_break: &'a GameTime,
     ) -> Self {
+        // When this instance starts before the break (start_break -
+        // start_time succeeds), mirror that leg's duration onto the other
+        // side of the break so both sides offer the same amount of daily
+        // room: hard_stop = end_break + (start_break - start_time). When it
+        // doesn't (this instance already starts at or after the break), the
+        // subtraction underflows and there's nothing to mirror — this side
+        // already is the reference window, so it just keeps the real fixed
+        // boundary.
+        let hard_stop = match *start_break - *start_time {
+            Ok(duration) => *end_break + duration,
+            Err(_) => Self::default_hard_stop(),
+        };
+
         Self {
             start_time,
             time_between_games,
@@ -26,6 +40,7 @@ impl<'a> GameTimeScheduler<'a> {
             current_games_per_time: 1,
             start_break: *start_break,
             end_break: *end_break,
+            hard_stop,
         }
     }
 
@@ -41,12 +56,12 @@ impl<'a> GameTimeScheduler<'a> {
     // so many reasonable hours to play in, so once this is reached the
     // remaining games for that "round" need to spill onto the next day
     // instead of wrapping the clock back around within the same day.
-    fn hard_stop() -> GameTime {
+    fn default_hard_stop() -> GameTime {
         GameTime::new(17, 0).expect("17:00 is always a valid time")
     }
 
     pub fn is_past_hard_stop(&self) -> bool {
-        self.current_time > Self::hard_stop()
+        self.current_time > self.hard_stop
     }
 
     // Advance the time

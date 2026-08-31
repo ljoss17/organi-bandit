@@ -1,6 +1,7 @@
 use std::fmt::Display;
 use std::fmt::Formatter;
 use std::ops::Add;
+use std::ops::Sub;
 
 use chrono::NaiveTime;
 use chrono::Timelike;
@@ -35,6 +36,19 @@ impl Add for GameTime {
             total_minutes
         };
         GameTime::new(hour, minute).expect("safe")
+    }
+}
+
+impl Sub for GameTime {
+    type Output = Result<GameTime, AppError>;
+
+    fn sub(self, rhs: Self) -> Self::Output {
+        if rhs > self {
+            return Err(AppError::GameTimeSubtractionUnderflow(self, rhs));
+        }
+        let total_minutes = (self.hour() as i32 * 60 + self.minute() as i32)
+            - (rhs.hour() as i32 * 60 + rhs.minute() as i32);
+        GameTime::new((total_minutes / 60) as u8, (total_minutes % 60) as u8)
     }
 }
 

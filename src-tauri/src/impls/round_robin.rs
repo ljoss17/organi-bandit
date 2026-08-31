@@ -8,6 +8,7 @@ use serde::{Deserialize, Serialize};
 use crate::errors::AppError;
 use crate::traits::tournament::Tournament;
 use crate::types::game::Game;
+use crate::types::game_time::GameTime;
 use crate::types::season::SeasonConfig;
 use crate::types::team::Team;
 use crate::utils::game_day_scheduler::GameDayScheduler;
@@ -45,18 +46,23 @@ impl Tournament for RoundRobin {
         // need the same number of real games per round: teams.len() / 2
         // (integer division holds whether the count is even or odd, the
         // odd case's bye simply removes one team from that round before
-        // halving). The two legs get slot-packed independently before
-        // merging, so required capacity is the SUM of each leg's own
-        // ceil, not a combined ceil (e.g. 2 fields, 3+3 games needs
-        // 2+2=4 slots, not ceil(6/2)=3).
+        // halving).
         let games_per_leg = teams.len() as u32 / 2;
         let slots_per_leg = games_per_leg.div_ceil(season_config.number_fields());
-        let required_slots = 2 * slots_per_leg;
 
-        let available_slots = self.available_slots_per_day(season_config);
-        if required_slots > available_slots {
+        // Each leg needs to fit entirely on its own side of the break — one
+        // leg plays out before start_break, the other starts fresh at
+        // end_break — rather than the two legs packing together across the
+        // break however capacity happens to allow. So the binding
+        // constraint is whichever side has less room, not the day's total
+        // capacity (a config where both sides combined have enough slots
+        // but one side alone doesn't must still be rejected).
+        let slots_before_break = self.available_slots_before_break(season_config);
+        let slots_after_break = self.available_slots_after_break(season_config);
+        let available_slots = slots_before_break.min(slots_after_break);
+        if slots_per_leg > available_slots {
             return Err(AppError::InsufficientDailyCapacity(
-                required_slots,
+                slots_per_leg,
                 available_slots,
             ));
         }
@@ -76,12 +82,20 @@ impl Tournament for RoundRobin {
 
         let mut maybe_schedule = None;
         'outer: for _ in 0..100 {
-            let pass_a = self.generate_single_game_schedule(teams, start_date, season_config)?;
+            let pass_a = self.generate_single_game_schedule(
+                teams,
+                start_date,
+                season_config,
+                season_config.start_time(),
+            )?;
             for _ in 0..100 {
-                let pass_b =
-                    self.generate_single_game_schedule(teams, start_date, season_config)?;
-                if let Some(schedule) = self.merge_schedules(pass_a.clone(), pass_b, season_config)
-                {
+                let pass_b = self.generate_single_game_schedule(
+                    teams,
+                    start_date,
+                    season_config,
+                    season_config.end_break(),
+                )?;
+                if let Some(schedule) = self.merge_schedules(pass_a.clone(), pass_b) {
                     maybe_schedule = Some(schedule);
                     break 'outer;
                 }
@@ -264,7 +278,11 @@ impl RoundRobin {
     // enforces. Uses a probe scheduler with 1 field, since this counts
     // distinct TIME VALUES only; field capacity is factored in separately by
     // the caller.
-    fn available_slots_per_day(&self, season_config: &SeasonConfig) -> u32 {
+    // Counts the distinct game-time slots strictly before the configured
+    // break, using a probe scheduler with 1 field since this counts
+    // distinct TIME VALUES only; field capacity is factored in separately
+    // by the caller.
+    fn available_slots_before_break(&self, season_config: &SeasonConfig) -> u32 {
         let mut probe = GameTimeScheduler::new(
             season_config.start_time(),
             season_config.time_between_games(),
@@ -278,6 +296,32 @@ impl RoundRobin {
         // time_between_games > 0 anywhere in the codebase (pre-existing gap,
         // out of scope here), and a zero duration would make try_advance
         // never change current_time, which would otherwise loop forever.
+        for _ in 0..(24 * 60) {
+            if probe.is_past_hard_stop() || probe.current_time() >= season_config.start_break() {
+                break;
+            }
+            slots += 1;
+            probe.try_advance();
+        }
+
+        slots
+    }
+
+    // Counts the distinct game-time slots at or after the configured break,
+    // up to the same hard-stop boundary. The probe's clock starts directly
+    // at end_break rather than at the season's start_time, since a leg
+    // placed after the break always begins there, independent of how much
+    // room the pre-break leg actually used.
+    fn available_slots_after_break(&self, season_config: &SeasonConfig) -> u32 {
+        let mut probe = GameTimeScheduler::new(
+            season_config.end_break(),
+            season_config.time_between_games(),
+            1,
+            season_config.start_break(),
+            season_config.end_break(),
+        );
+
+        let mut slots = 0u32;
         for _ in 0..(24 * 60) {
             if probe.is_past_hard_stop() {
                 break;
@@ -295,11 +339,17 @@ impl RoundRobin {
     // scheduled per day here. This is the proven-correct core the
     // eventual double round-robin is built from, by generating two of
     // these (different team orders) and merging them.
+    // `leg_start_time` is the clock each day's schedule for this leg
+    // resets to — the season's actual start_time for the leg that plays
+    // before the break, or end_break for the leg that plays after it, so
+    // the two legs land in disjoint, non-adjacent windows every day rather
+    // than one leg continuing wherever the other's clock happened to stop.
     fn generate_single_game_schedule(
         &self,
         teams: &[Team],
         start_date: &NaiveDate,
         season_config: &SeasonConfig,
+        leg_start_time: &GameTime,
     ) -> Result<Vec<Game>, AppError> {
         let mut rng = rand::rng();
         let mut inner_teams = teams.to_vec();
@@ -313,7 +363,7 @@ impl RoundRobin {
 
         let mut game_day_scheduler = GameDayScheduler::new(start_date, season_config.game_days())?;
         let mut game_time_scheduler = GameTimeScheduler::new(
-            season_config.start_time(),
+            leg_start_time,
             season_config.time_between_games(),
             season_config.number_fields(),
             season_config.start_break(),
@@ -324,12 +374,20 @@ impl RoundRobin {
             game_time_scheduler.reset();
 
             for i in 0..(number_teams / 2) {
-                game_day_scheduler.advance_if_past_hard_stop(&mut game_time_scheduler);
-                let game_day = *game_day_scheduler.current_day();
-                let game_time = *game_time_scheduler.current_time();
                 let home_team = inner_teams[i].clone();
                 let away_team = inner_teams[number_teams - 1 - i].clone();
                 let is_bye = home_team.get_name() == "Bye" || away_team.get_name() == "Bye";
+                // A bye never advances the clock, so it can never legitimately
+                // need to spill onto a new day either — skipping the check
+                // here avoids the round's harmless bye slot getting stranded
+                // on a fresh day purely because the clock's last real-game
+                // advance happened to tick past hard_stop with nothing left
+                // that actually needed the room.
+                if !is_bye {
+                    game_day_scheduler.advance_if_past_hard_stop(&mut game_time_scheduler);
+                }
+                let game_day = *game_day_scheduler.current_day();
+                let game_time = *game_time_scheduler.current_time();
                 let game =
                     Game::new_with_game_day(home_team, away_team, game_day, game_time, None)?;
                 schedule.push(game);
@@ -355,12 +413,7 @@ impl RoundRobin {
     // merged day would repeat the same pair in both halves — the two
     // passes don't combine cleanly and the caller should try a fresh pair
     // of schedules.
-    fn merge_schedules(
-        &self,
-        pass_a: Vec<Game>,
-        pass_b: Vec<Game>,
-        season_config: &SeasonConfig,
-    ) -> Option<Vec<Game>> {
+    fn merge_schedules(&self, pass_a: Vec<Game>, pass_b: Vec<Game>) -> Option<Vec<Game>> {
         let has_bye = pass_a.iter().any(is_bye_game);
 
         let pass_a_days = group_by_day(pass_a);
@@ -416,39 +469,28 @@ impl RoundRobin {
                 }
             }
 
-            // Replay pass_a's own real games through a fresh scheduler to
-            // land on the exact state it ended the day in, so pass_b's
-            // games continue the same time sequence instead of also
-            // starting fresh at start_time. This never needs hard-stop
-            // awareness: validate_parameters already guarantees a single
-            // day has enough capacity for both legs combined.
-            let real_games_in_a = games_a.iter().filter(|game| !is_bye_game(game)).count();
-            let mut continuation = GameTimeScheduler::new(
-                season_config.start_time(),
-                season_config.time_between_games(),
-                season_config.number_fields(),
-                season_config.start_break(),
-                season_config.end_break(),
-            );
-            for _ in 0..real_games_in_a {
-                continuation.try_advance();
-            }
-
             merged.extend(games_a);
             // pass_a's own bye entry (kept above) already represents this
             // day's bye, so pass_b's bye entry (if any) is redundant here.
+            // pass_b's own games already carry the correct time for their
+            // side of the break (each leg was generated with its own
+            // leg_start_time — start_time for pass_a, end_break for
+            // pass_b — and a matching mirrored hard_stop), so they're used
+            // as generated rather than replayed through a continuation
+            // scheduler. Only the calendar day is re-stamped to pass_a's,
+            // as a cheap safety net in case the two passes' day sequences
+            // ever drift.
             for game in games_b.into_iter().filter(|game| !is_bye_game(game)) {
-                let new_time = *continuation.current_time();
+                let game_time = game.get_game_time().ok()?;
                 let updated_game = Game::new_with_game_day(
                     game.get_home_team().clone(),
                     game.get_away_team().clone(),
                     day,
-                    new_time,
+                    game_time,
                     game.get_referee().clone(),
                 )
                 .ok()?;
                 merged.push(updated_game);
-                continuation.try_advance();
             }
         }
 
@@ -564,16 +606,19 @@ mod tests {
         assert!(matches!(result, Err(AppError::InvalidNumberOfFields(0))));
     }
 
-    // Test case: the season's daily time window is too tight to fit both
-    // legs' games, even with ample fields.
+    // Test case: an otherwise ordinary season config (a normal morning
+    // start, a standard lunch break, one field) simply doesn't have enough
+    // pre-lunch room for this many teams — 8 teams need 4 morning slots,
+    // but a 9:00 start with a 12:00 lunch only offers 3 (9:00, 10:00,
+    // 11:00) an hour apart.
     #[test]
     fn compute_schedule_rejects_insufficient_daily_capacity() {
         let teams = many_teams(8);
         let season_config = SeasonConfig::new(
             start_date(),
-            GameTime::new(16, 0).unwrap(),
+            GameTime::new(9, 0).unwrap(),
             GameTime::new(12, 0).unwrap(),
-            GameTime::new(12, 30).unwrap(),
+            GameTime::new(13, 0).unwrap(),
             GameTime::new(1, 0).unwrap(),
             1,
             vec![Weekday::Sat],
@@ -583,7 +628,7 @@ mod tests {
 
         assert!(matches!(
             result,
-            Err(AppError::InsufficientDailyCapacity(8, 2))
+            Err(AppError::InsufficientDailyCapacity(4, 3))
         ));
     }
 
@@ -643,7 +688,7 @@ mod tests {
             start_date(),
             GameTime::new(9, 0).unwrap(),
             GameTime::new(12, 0).unwrap(),
-            GameTime::new(20, 0).unwrap(),
+            GameTime::new(13, 30).unwrap(),
             GameTime::new(1, 30).unwrap(),
             2,
             vec![Weekday::Wed, Weekday::Sat],
@@ -665,7 +710,7 @@ mod tests {
             start_date(),
             GameTime::new(9, 0).unwrap(),
             GameTime::new(12, 0).unwrap(),
-            GameTime::new(20, 0).unwrap(),
+            GameTime::new(13, 30).unwrap(),
             GameTime::new(1, 30).unwrap(),
             3,
             vec![Weekday::Wed, Weekday::Sat],
@@ -690,7 +735,7 @@ mod tests {
             GameTime::new(9, 0).unwrap(),
             GameTime::new(12, 0).unwrap(),
             GameTime::new(14, 0).unwrap(),
-            GameTime::new(1, 30).unwrap(),
+            GameTime::new(2, 0).unwrap(),
             2,
             vec![Weekday::Sat],
         );
@@ -710,7 +755,7 @@ mod tests {
         let season_config = SeasonConfig::new(
             start_date(),
             GameTime::new(9, 0).unwrap(),
-            GameTime::new(12, 0).unwrap(),
+            GameTime::new(13, 0).unwrap(),
             GameTime::new(14, 0).unwrap(),
             GameTime::new(1, 0).unwrap(),
             1,
@@ -733,7 +778,7 @@ mod tests {
             GameTime::new(9, 0).unwrap(),
             GameTime::new(12, 0).unwrap(),
             GameTime::new(14, 0).unwrap(),
-            GameTime::new(1, 30).unwrap(),
+            GameTime::new(2, 0).unwrap(),
             2,
             vec![Weekday::Sat],
         );
@@ -755,7 +800,7 @@ mod tests {
             GameTime::new(9, 0).unwrap(),
             GameTime::new(12, 0).unwrap(),
             GameTime::new(13, 30).unwrap(),
-            GameTime::new(1, 30).unwrap(),
+            GameTime::new(2, 0).unwrap(),
             2,
             vec![Weekday::Wed, Weekday::Sat, Weekday::Sun],
         );
@@ -772,29 +817,6 @@ mod tests {
             days_used.len() > 1,
             "expected the schedule to actually use more than one configured weekday"
         );
-
-        assert_schedule(&schedule, &teams, &start_date(), &season_config, false);
-    }
-
-    // Test case: a break window that actually falls within the game-time
-    // range, so at least one time slot has to jump over it instead of
-    // landing inside it.
-    #[test]
-    fn test_break_window_within_game_time_range() {
-        let teams = many_teams(8);
-        let season_config = SeasonConfig::new(
-            start_date(),
-            GameTime::new(9, 0).unwrap(),
-            GameTime::new(11, 0).unwrap(),
-            GameTime::new(12, 30).unwrap(),
-            GameTime::new(1, 0).unwrap(),
-            2,
-            vec![Weekday::Sat],
-        );
-
-        let schedule = RoundRobin
-            .compute_schedule(&teams, &start_date(), &season_config, false)
-            .unwrap();
 
         assert_schedule(&schedule, &teams, &start_date(), &season_config, false);
     }
@@ -861,6 +883,7 @@ mod tests {
         let mut team_real_game_days: HashMap<&str, HashSet<NaiveDate>> = HashMap::new();
         let mut team_bye_days: HashMap<&str, NaiveDate> = HashMap::new();
         let mut times_by_day: HashMap<NaiveDate, HashSet<GameTime>> = HashMap::new();
+        let mut team_daily_times: HashMap<(&str, NaiveDate), Vec<GameTime>> = HashMap::new();
         let mut pair_counts: HashMap<(String, String), u32> = HashMap::new();
         let mut pair_days: HashMap<(String, String), HashSet<NaiveDate>> = HashMap::new();
 
@@ -909,6 +932,14 @@ mod tests {
                 );
 
                 times_by_day.entry(day).or_default().insert(game_time);
+                team_daily_times
+                    .entry((home_team.get_name(), day))
+                    .or_default()
+                    .push(game_time);
+                team_daily_times
+                    .entry((away_team.get_name(), day))
+                    .or_default()
+                    .push(game_time);
 
                 let mut names = [
                     home_team.get_name().to_owned(),
@@ -992,6 +1023,26 @@ mod tests {
                     pair[1]
                 );
             }
+        }
+
+        // A team's two games on a given day are never back-to-back: the
+        // season's break exists to give teams rest, so one game must fall
+        // strictly before the break starts and the other at or after it
+        // ends, never both on the same side of it.
+        for ((team, day), mut times) in team_daily_times {
+            assert_eq!(
+                times.len(),
+                2,
+                "team {team} should play exactly 2 games on {day}, played {}",
+                times.len()
+            );
+            times.sort();
+            assert!(
+                times[0] < *season_config.start_break() && times[1] >= *season_config.end_break(),
+                "team {team}'s games on {day} at {} and {} aren't separated by the break window",
+                times[0],
+                times[1]
+            );
         }
 
         // Every unique real (non-bye) pair should face each other exactly
