@@ -2,6 +2,8 @@ use std::fmt::Display;
 use std::fmt::Formatter;
 use std::ops::Add;
 
+use chrono::NaiveTime;
+use chrono::Timelike;
 use serde::Deserialize;
 use serde::Serialize;
 
@@ -33,6 +35,14 @@ impl Add for GameTime {
             total_minutes
         };
         GameTime::new(hour, minute).expect("safe")
+    }
+}
+
+impl TryFrom<NaiveTime> for GameTime {
+    type Error = AppError;
+
+    fn try_from(value: NaiveTime) -> Result<Self, Self::Error> {
+        Self::new(value.hour().try_into()?, value.minute().try_into()?)
     }
 }
 
