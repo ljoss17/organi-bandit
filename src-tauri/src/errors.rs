@@ -43,9 +43,11 @@ pub enum AppError {
     )]
     InfeasibleDailyDoubleRoundRobin(usize),
     #[error(
-        "the season's daily schedule window can't fit {0} game slots (only {1} available between the start time and the hard stop, minus any break); widen the game window, add fields, or reduce time between games"
+        "one leg of the daily double round-robin needs {0} game slots, but only {1} are available on whichever side of the break (before start or after end) has less room; widen the game window, add fields, or reduce time between games"
     )]
     InsufficientDailyCapacity(u32, u32),
+    #[error("cannot subtract {1} from {0}: {1} is later in the day than {0}")]
+    GameTimeSubtractionUnderflow(GameTime, GameTime),
 }
 
 impl Serialize for AppError {

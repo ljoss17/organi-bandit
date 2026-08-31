@@ -482,7 +482,7 @@ mod tests {
             start_date(),
             GameTime::new(9, 0).unwrap(),
             GameTime::new(12, 0).unwrap(),
-            GameTime::new(20, 0).unwrap(),
+            GameTime::new(13, 30).unwrap(),
             GameTime::new(1, 30).unwrap(),
             1,
             vec![Weekday::Wed, Weekday::Sat],
