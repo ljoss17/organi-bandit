@@ -370,6 +370,8 @@ document.getElementById("generate-schedule").addEventListener("click", async () 
     console.log(schedule);
     await window.__TAURI__.core.invoke("generate_excel_schedule", {
       schedule,
+      startBreak,
+      endBreak,
       numberFields,
       outputDirectoryPath,
       language: currentLanguage,

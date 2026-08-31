@@ -11,6 +11,7 @@ use crate::errors::AppError;
 use crate::impls::round_robin::RoundRobin;
 use crate::impls::single_elimination::SingleElimination;
 use crate::types::game::Game;
+use crate::types::game_time::GameTime;
 use crate::types::season::{Season, SeasonConfig};
 use crate::types::team::Team;
 use crate::types::tournament_selection::TournamentSelection;
@@ -31,6 +32,8 @@ pub fn tauri_generate_schedule(
 #[tauri::command]
 pub fn generate_excel_schedule(
     schedule: Vec<Game>,
+    start_break: GameTime,
+    end_break: GameTime,
     number_fields: u16,
     output_directory_path: String,
     language: &str,
@@ -68,6 +71,19 @@ pub fn generate_excel_schedule(
             row += 1;
             current_games = 0;
         } else if current_time != Some(game_day.time()) {
+            if current_time.map(GameTime::try_from).transpose()? < Some(start_break)
+                && GameTime::try_from(game_day.time())? >= end_break
+            {
+                row += 1;
+                write_break_row(
+                    worksheet,
+                    row,
+                    start_break,
+                    end_break,
+                    number_fields,
+                    language,
+                )?;
+            }
             row += 1;
             current_games = 0;
         }
@@ -97,6 +113,37 @@ pub fn generate_excel_schedule(
         path = format!("{output_directory_path}/calendrier_{year}_{language}_v{version}.xlsx");
     }
     workbook.save(path)?;
+    Ok(())
+}
+
+fn write_break_row(
+    worksheet: &mut Worksheet,
+    row: u32,
+    start_break: GameTime,
+    end_break: GameTime,
+    number_fields: u16,
+    language: &str,
+) -> Result<(), AppError> {
+    let break_format = Format::new()
+        .set_align(FormatAlign::Center)
+        .set_align(FormatAlign::VerticalCenter)
+        .set_border(FormatBorder::Thin)
+        .set_background_color(Color::Gray);
+
+    worksheet.merge_range(
+        row,
+        0,
+        row,
+        number_fields * 5,
+        &t!(
+            "break_row",
+            locale = language,
+            start_break = start_break,
+            end_break = end_break,
+        ),
+        &break_format,
+    )?;
+    worksheet.set_row_height(row, 25)?;
     Ok(())
 }
 
@@ -248,8 +295,14 @@ mod tests {
     fn generate_excel_schedule_does_not_error_on_an_empty_schedule() {
         let output_dir = temp_output_dir("empty-schedule");
 
-        let result =
-            generate_excel_schedule(vec![], 1, output_dir.to_string_lossy().to_string(), "en");
+        let result = generate_excel_schedule(
+            vec![],
+            GameTime::new(12, 0).unwrap(),
+            GameTime::new(13, 30).unwrap(),
+            1,
+            output_dir.to_string_lossy().to_string(),
+            "en",
+        );
 
         assert!(result.is_ok());
         remove_dir_all(&output_dir).unwrap();
@@ -271,6 +324,8 @@ mod tests {
 
         let result = generate_excel_schedule(
             vec![game],
+            GameTime::new(12, 0).unwrap(),
+            GameTime::new(13, 30).unwrap(),
             1,
             output_dir.to_string_lossy().to_string(),
             "en",
@@ -299,6 +354,8 @@ mod tests {
 
         generate_excel_schedule(
             vec![game],
+            GameTime::new(12, 0).unwrap(),
+            GameTime::new(13, 30).unwrap(),
             1,
             output_dir.to_string_lossy().to_string(),
             "en",
@@ -329,6 +386,8 @@ mod tests {
         // First generation: plain filename, no suffix.
         generate_excel_schedule(
             vec![game("Home", "Away")],
+            GameTime::new(12, 0).unwrap(),
+            GameTime::new(13, 30).unwrap(),
             1,
             output_dir.to_string_lossy().to_string(),
             "en",
@@ -342,6 +401,8 @@ mod tests {
         // not touch the first file, should create a "_v2" file instead.
         generate_excel_schedule(
             vec![game("Other Home", "Other Away")],
+            GameTime::new(12, 0).unwrap(),
+            GameTime::new(13, 30).unwrap(),
             1,
             output_dir.to_string_lossy().to_string(),
             "en",
@@ -360,6 +421,8 @@ mod tests {
         // two untouched.
         generate_excel_schedule(
             vec![game("Third Home", "Third Away")],
+            GameTime::new(12, 0).unwrap(),
+            GameTime::new(13, 30).unwrap(),
             1,
             output_dir.to_string_lossy().to_string(),
             "en",

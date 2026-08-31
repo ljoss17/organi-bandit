@@ -20,3 +20,6 @@ away:
 referee:
   en: "Referee"
   fr: "Arbitre"
+break_row:
+  en: "Break from %{start_break} to %{end_break}"
+  fr: "Pause de %{start_break} à %{end_break}"
