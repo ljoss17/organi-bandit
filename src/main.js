@@ -314,6 +314,7 @@ function collectSeasonInput() {
   const startDate = document.getElementById("start-date").value;
   const numberFields = Number(document.getElementById("number-fields").value);
   const startTime = readGameTime("start-time");
+  const gameDuration = readGameTime("game-duration");
   const timeBetweenGames = readGameTime("time-between-games");
   const startBreak = readGameTime("start-break");
   const endBreak = readGameTime("end-break");
@@ -325,6 +326,7 @@ function collectSeasonInput() {
     startDate,
     numberFields,
     startTime,
+    gameDuration,
     timeBetweenGames,
     startBreak,
     endBreak,
@@ -338,6 +340,7 @@ document.getElementById("generate-schedule").addEventListener("click", async () 
     startDate,
     numberFields,
     startTime,
+    gameDuration,
     timeBetweenGames,
     startBreak,
     endBreak,
@@ -362,6 +365,7 @@ document.getElementById("generate-schedule").addEventListener("click", async () 
         startTime,
         startBreak,
         endBreak,
+        gameDuration,
         timeBetweenGames,
         numberFields,
         gameDays,
