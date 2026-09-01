@@ -39,6 +39,10 @@ pub enum AppError {
     #[error("number of fields must be at least 1, got {0}")]
     InvalidNumberOfFields(u32),
     #[error(
+        "game duration must be longer than zero (the time between games may be zero, but a game itself cannot take no time)"
+    )]
+    ZeroGameDuration,
+    #[error(
         "cannot give every team two distinct opponents per match day with only {0} team(s); at least 4 are required"
     )]
     InfeasibleDailyDoubleRoundRobin(usize),

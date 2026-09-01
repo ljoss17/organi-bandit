@@ -33,6 +33,12 @@ impl Tournament for SingleElimination {
         if number_fields < 1 {
             return Err(AppError::InvalidNumberOfFields(number_fields));
         }
+        // A zero-length game would leave every slot starting at the same
+        // time, so the bracket could never advance. The gap after a game may
+        // legitimately be zero, the game itself cannot.
+        if season_config.game_duration() == &GameTime::new(0, 0)? {
+            return Err(AppError::ZeroGameDuration);
+        }
         Ok(())
     }
 
@@ -68,9 +74,11 @@ impl Tournament for SingleElimination {
 
         let mut schedule = Vec::with_capacity(bracket_size - 1);
         let mut game_day_scheduler = GameDayScheduler::new(start_date, season_config.game_days())?;
+        let interval = season_config.interval_between_games();
         let mut game_time_scheduler = GameTimeScheduler::new(
             season_config.start_time(),
-            season_config.time_between_games(),
+            &interval,
+            season_config.game_duration(),
             season_config.number_fields(),
             season_config.start_break(),
             season_config.end_break(),
@@ -263,7 +271,8 @@ mod tests {
             GameTime::new(9, 0).unwrap(),
             GameTime::new(12, 0).unwrap(),
             GameTime::new(13, 30).unwrap(),
-            GameTime::new(1, 30).unwrap(),
+            GameTime::new(1, 0).unwrap(),
+            GameTime::new(0, 30).unwrap(),
             1,
             vec![Weekday::Sat],
         );
@@ -281,7 +290,8 @@ mod tests {
             GameTime::new(9, 0).unwrap(),
             GameTime::new(12, 0).unwrap(),
             GameTime::new(13, 30).unwrap(),
-            GameTime::new(1, 30).unwrap(),
+            GameTime::new(1, 0).unwrap(),
+            GameTime::new(0, 30).unwrap(),
             1,
             vec![Weekday::Sat],
         );
@@ -300,7 +310,8 @@ mod tests {
             GameTime::new(9, 0).unwrap(),
             GameTime::new(12, 0).unwrap(),
             GameTime::new(13, 30).unwrap(),
-            GameTime::new(1, 30).unwrap(),
+            GameTime::new(1, 0).unwrap(),
+            GameTime::new(0, 30).unwrap(),
             0,
             vec![Weekday::Sat],
         );
@@ -311,6 +322,27 @@ mod tests {
         assert!(matches!(result, Err(AppError::InvalidNumberOfFields(0))));
     }
 
+    // Test case: a game that takes no time is rejected — every slot would
+    // start at the same moment and the bracket could never advance.
+    #[test]
+    fn test_single_elimination_parameter_validation_rejects_zero_game_duration() {
+        let season_config = SeasonConfig::new(
+            start_date(),
+            GameTime::new(9, 0).unwrap(),
+            GameTime::new(12, 0).unwrap(),
+            GameTime::new(13, 30).unwrap(),
+            GameTime::new(0, 0).unwrap(),
+            GameTime::new(0, 30).unwrap(),
+            2,
+            vec![Weekday::Sat],
+        );
+        let single_elimination = SingleElimination::new(false);
+
+        let result = single_elimination.validate_parameters(&teams(), &season_config);
+
+        assert!(matches!(result, Err(AppError::ZeroGameDuration)));
+    }
+
     #[test]
     fn compute_schedule_rejects_empty_teams() {
         let season_config = SeasonConfig::new(
@@ -318,7 +350,8 @@ mod tests {
             GameTime::new(9, 0).unwrap(),
             GameTime::new(12, 0).unwrap(),
             GameTime::new(13, 30).unwrap(),
-            GameTime::new(1, 30).unwrap(),
+            GameTime::new(1, 0).unwrap(),
+            GameTime::new(0, 30).unwrap(),
             1,
             vec![Weekday::Sat],
         );
@@ -340,7 +373,8 @@ mod tests {
             GameTime::new(9, 0).unwrap(),
             GameTime::new(12, 0).unwrap(),
             GameTime::new(13, 30).unwrap(),
-            GameTime::new(1, 30).unwrap(),
+            GameTime::new(1, 0).unwrap(),
+            GameTime::new(0, 30).unwrap(),
             0,
             vec![Weekday::Sat],
         );
@@ -364,7 +398,8 @@ mod tests {
             GameTime::new(9, 0).unwrap(),
             GameTime::new(12, 0).unwrap(),
             GameTime::new(13, 30).unwrap(),
-            GameTime::new(1, 30).unwrap(),
+            GameTime::new(1, 0).unwrap(),
+            GameTime::new(0, 30).unwrap(),
             1,
             vec![],
         );
@@ -386,7 +421,8 @@ mod tests {
             GameTime::new(9, 0).unwrap(),
             GameTime::new(12, 0).unwrap(),
             GameTime::new(13, 30).unwrap(),
-            GameTime::new(1, 30).unwrap(),
+            GameTime::new(1, 0).unwrap(),
+            GameTime::new(0, 30).unwrap(),
             2,
             vec![Weekday::Sat],
         );
@@ -410,7 +446,8 @@ mod tests {
             GameTime::new(9, 0).unwrap(),
             GameTime::new(12, 0).unwrap(),
             GameTime::new(13, 30).unwrap(),
-            GameTime::new(1, 30).unwrap(),
+            GameTime::new(1, 0).unwrap(),
+            GameTime::new(0, 30).unwrap(),
             2,
             vec![Weekday::Sat],
         );
@@ -441,7 +478,8 @@ mod tests {
             GameTime::new(9, 0).unwrap(),
             GameTime::new(12, 0).unwrap(),
             GameTime::new(13, 30).unwrap(),
-            GameTime::new(1, 30).unwrap(),
+            GameTime::new(1, 0).unwrap(),
+            GameTime::new(0, 30).unwrap(),
             2,
             vec![Weekday::Sat],
         );
@@ -483,7 +521,8 @@ mod tests {
             GameTime::new(9, 0).unwrap(),
             GameTime::new(12, 0).unwrap(),
             GameTime::new(13, 30).unwrap(),
-            GameTime::new(1, 30).unwrap(),
+            GameTime::new(1, 0).unwrap(),
+            GameTime::new(0, 30).unwrap(),
             1,
             vec![Weekday::Wed, Weekday::Sat],
         );
@@ -521,7 +560,8 @@ mod tests {
             GameTime::new(9, 0).unwrap(),
             GameTime::new(12, 0).unwrap(),
             GameTime::new(20, 0).unwrap(),
-            GameTime::new(1, 30).unwrap(),
+            GameTime::new(1, 0).unwrap(),
+            GameTime::new(0, 30).unwrap(),
             1,
             vec![Weekday::Wed, Weekday::Sat],
         );
@@ -544,7 +584,8 @@ mod tests {
             GameTime::new(9, 0).unwrap(),
             GameTime::new(11, 0).unwrap(),
             GameTime::new(12, 30).unwrap(),
-            GameTime::new(1, 0).unwrap(),
+            GameTime::new(0, 45).unwrap(),
+            GameTime::new(0, 15).unwrap(),
             2,
             vec![Weekday::Sat],
         );
@@ -563,7 +604,8 @@ mod tests {
             GameTime::new(9, 0).unwrap(),
             GameTime::new(12, 0).unwrap(),
             GameTime::new(13, 30).unwrap(),
-            GameTime::new(1, 30).unwrap(),
+            GameTime::new(1, 0).unwrap(),
+            GameTime::new(0, 30).unwrap(),
             2,
             vec![Weekday::Sat],
         );
@@ -601,7 +643,8 @@ mod tests {
             GameTime::new(9, 0).unwrap(),
             GameTime::new(12, 0).unwrap(),
             GameTime::new(13, 30).unwrap(),
-            GameTime::new(1, 30).unwrap(),
+            GameTime::new(1, 0).unwrap(),
+            GameTime::new(0, 30).unwrap(),
             2,
             vec![Weekday::Sat],
         );
@@ -642,7 +685,8 @@ mod tests {
             GameTime::new(9, 0).unwrap(),
             GameTime::new(12, 0).unwrap(),
             GameTime::new(13, 30).unwrap(),
-            GameTime::new(1, 30).unwrap(),
+            GameTime::new(1, 0).unwrap(),
+            GameTime::new(0, 30).unwrap(),
             2,
             vec![Weekday::Sat],
         );
@@ -669,7 +713,8 @@ mod tests {
             GameTime::new(9, 0).unwrap(),
             GameTime::new(12, 0).unwrap(),
             GameTime::new(13, 30).unwrap(),
-            GameTime::new(1, 30).unwrap(),
+            GameTime::new(1, 0).unwrap(),
+            GameTime::new(0, 30).unwrap(),
             1,
             vec![Weekday::Sat],
         );
@@ -693,7 +738,8 @@ mod tests {
             GameTime::new(9, 0).unwrap(),
             GameTime::new(12, 0).unwrap(),
             GameTime::new(13, 30).unwrap(),
-            GameTime::new(1, 30).unwrap(),
+            GameTime::new(1, 0).unwrap(),
+            GameTime::new(0, 30).unwrap(),
             1,
             vec![Weekday::Sat],
         );
@@ -720,7 +766,8 @@ mod tests {
             GameTime::new(9, 0).unwrap(),
             GameTime::new(12, 0).unwrap(),
             GameTime::new(13, 30).unwrap(),
-            GameTime::new(1, 30).unwrap(),
+            GameTime::new(1, 0).unwrap(),
+            GameTime::new(0, 30).unwrap(),
             2,
             vec![Weekday::Sat],
         );

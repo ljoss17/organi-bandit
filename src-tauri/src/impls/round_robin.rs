@@ -33,6 +33,14 @@ impl Tournament for RoundRobin {
             ));
         }
 
+        // A zero-length game would leave every slot starting at the same
+        // time, so the schedule could never advance. The gap after a game
+        // may legitimately be zero (back-to-back kickoffs), the game itself
+        // cannot.
+        if season_config.game_duration() == &GameTime::new(0, 0)? {
+            return Err(AppError::ZeroGameDuration);
+        }
+
         // Below 4 teams, once one team is on bye, too few opponents remain
         // to give every team two *different* opponents on a shared match
         // day — mathematically impossible regardless of how much time is
@@ -283,21 +291,27 @@ impl RoundRobin {
     // distinct TIME VALUES only; field capacity is factored in separately
     // by the caller.
     fn available_slots_before_break(&self, season_config: &SeasonConfig) -> u32 {
+        let interval = season_config.interval_between_games();
         let mut probe = GameTimeScheduler::new(
             season_config.start_time(),
-            season_config.time_between_games(),
+            &interval,
+            season_config.game_duration(),
             1,
             season_config.start_break(),
             season_config.end_break(),
         );
 
         let mut slots = 0u32;
-        // Defensive iteration cap: nothing currently validates
-        // time_between_games > 0 anywhere in the codebase (pre-existing gap,
-        // out of scope here), and a zero duration would make try_advance
-        // never change current_time, which would otherwise loop forever.
+        // Defensive iteration cap. validate_parameters rejects a zero game
+        // duration, so the interval is always positive and try_advance
+        // always moves current_time forward — but this probe doesn't depend
+        // on having been called after that check, and a zero interval would
+        // otherwise spin here forever.
         for _ in 0..(24 * 60) {
-            if probe.is_past_hard_stop() || probe.current_time() >= season_config.start_break() {
+            // A slot only counts if the game played in it finishes before
+            // the break starts
+            let game_ends = *probe.current_time() + *season_config.game_duration();
+            if probe.is_past_hard_stop() || game_ends > *season_config.start_break() {
                 break;
             }
             slots += 1;
@@ -313,9 +327,11 @@ impl RoundRobin {
     // placed after the break always begins there, independent of how much
     // room the pre-break leg actually used.
     fn available_slots_after_break(&self, season_config: &SeasonConfig) -> u32 {
+        let interval = season_config.interval_between_games();
         let mut probe = GameTimeScheduler::new(
             season_config.end_break(),
-            season_config.time_between_games(),
+            &interval,
+            season_config.game_duration(),
             1,
             season_config.start_break(),
             season_config.end_break(),
@@ -362,9 +378,11 @@ impl RoundRobin {
         let mut schedule = Vec::with_capacity((number_teams - 1) * (number_teams / 2));
 
         let mut game_day_scheduler = GameDayScheduler::new(start_date, season_config.game_days())?;
+        let interval = season_config.interval_between_games();
         let mut game_time_scheduler = GameTimeScheduler::new(
             leg_start_time,
-            season_config.time_between_games(),
+            &interval,
+            season_config.game_duration(),
             season_config.number_fields(),
             season_config.start_break(),
             season_config.end_break(),
@@ -557,7 +575,8 @@ mod tests {
             GameTime::new(9, 0).unwrap(),
             GameTime::new(12, 0).unwrap(),
             GameTime::new(13, 30).unwrap(),
-            GameTime::new(1, 30).unwrap(),
+            GameTime::new(1, 0).unwrap(),
+            GameTime::new(0, 30).unwrap(),
             1,
             vec![Weekday::Sat],
         );
@@ -576,7 +595,8 @@ mod tests {
             GameTime::new(9, 0).unwrap(),
             GameTime::new(12, 0).unwrap(),
             GameTime::new(13, 30).unwrap(),
-            GameTime::new(1, 30).unwrap(),
+            GameTime::new(1, 0).unwrap(),
+            GameTime::new(0, 30).unwrap(),
             1,
             vec![Weekday::Sat],
         );
@@ -595,7 +615,8 @@ mod tests {
             GameTime::new(9, 0).unwrap(),
             GameTime::new(12, 0).unwrap(),
             GameTime::new(13, 30).unwrap(),
-            GameTime::new(1, 30).unwrap(),
+            GameTime::new(1, 0).unwrap(),
+            GameTime::new(0, 30).unwrap(),
             0,
             vec![Weekday::Sat],
         );
@@ -604,6 +625,50 @@ mod tests {
             RoundRobin.compute_schedule(&many_teams(5), &start_date(), &season_config, false);
 
         assert!(matches!(result, Err(AppError::InvalidNumberOfFields(0))));
+    }
+
+    // Test case: a game that takes no time is rejected — every slot would
+    // start at the same moment and the schedule could never advance.
+    #[test]
+    fn compute_schedule_rejects_zero_game_duration() {
+        let season_config = SeasonConfig::new(
+            start_date(),
+            GameTime::new(9, 0).unwrap(),
+            GameTime::new(12, 0).unwrap(),
+            GameTime::new(13, 30).unwrap(),
+            GameTime::new(0, 0).unwrap(),
+            GameTime::new(0, 30).unwrap(),
+            2,
+            vec![Weekday::Sat],
+        );
+
+        let result =
+            RoundRobin.compute_schedule(&many_teams(6), &start_date(), &season_config, false);
+
+        assert!(matches!(result, Err(AppError::ZeroGameDuration)));
+    }
+
+    // Test case: no gap at all between games is legitimate — one game's
+    // kickoff can follow straight on from the previous game ending.
+    #[test]
+    fn compute_schedule_accepts_zero_time_between_games() {
+        let teams = many_teams(6);
+        let season_config = SeasonConfig::new(
+            start_date(),
+            GameTime::new(9, 0).unwrap(),
+            GameTime::new(12, 0).unwrap(),
+            GameTime::new(13, 0).unwrap(),
+            GameTime::new(1, 0).unwrap(),
+            GameTime::new(0, 0).unwrap(),
+            1,
+            vec![Weekday::Sat],
+        );
+
+        let schedule = RoundRobin
+            .compute_schedule(&teams, &start_date(), &season_config, false)
+            .unwrap();
+
+        assert_schedule(&schedule, &teams, &start_date(), &season_config, false);
     }
 
     // Test case: an otherwise ordinary season config (a normal morning
@@ -619,7 +684,8 @@ mod tests {
             GameTime::new(9, 0).unwrap(),
             GameTime::new(12, 0).unwrap(),
             GameTime::new(13, 0).unwrap(),
-            GameTime::new(1, 0).unwrap(),
+            GameTime::new(0, 45).unwrap(),
+            GameTime::new(0, 15).unwrap(),
             1,
             vec![Weekday::Sat],
         );
@@ -644,7 +710,8 @@ mod tests {
             GameTime::new(9, 0).unwrap(),
             GameTime::new(12, 0).unwrap(),
             GameTime::new(13, 30).unwrap(),
-            GameTime::new(1, 30).unwrap(),
+            GameTime::new(1, 0).unwrap(),
+            GameTime::new(0, 30).unwrap(),
             2,
             vec![Weekday::Sat],
         );
@@ -664,7 +731,8 @@ mod tests {
             GameTime::new(9, 0).unwrap(),
             GameTime::new(12, 0).unwrap(),
             GameTime::new(13, 30).unwrap(),
-            GameTime::new(1, 30).unwrap(),
+            GameTime::new(1, 0).unwrap(),
+            GameTime::new(0, 30).unwrap(),
             1,
             vec![Weekday::Sat],
         );
@@ -689,7 +757,8 @@ mod tests {
             GameTime::new(9, 0).unwrap(),
             GameTime::new(12, 0).unwrap(),
             GameTime::new(13, 30).unwrap(),
-            GameTime::new(1, 30).unwrap(),
+            GameTime::new(1, 0).unwrap(),
+            GameTime::new(0, 30).unwrap(),
             2,
             vec![Weekday::Wed, Weekday::Sat],
         );
@@ -711,7 +780,8 @@ mod tests {
             GameTime::new(9, 0).unwrap(),
             GameTime::new(12, 0).unwrap(),
             GameTime::new(13, 30).unwrap(),
-            GameTime::new(1, 30).unwrap(),
+            GameTime::new(1, 0).unwrap(),
+            GameTime::new(0, 30).unwrap(),
             3,
             vec![Weekday::Wed, Weekday::Sat],
         );
@@ -733,9 +803,10 @@ mod tests {
         let season_config = SeasonConfig::new(
             start_date(),
             GameTime::new(9, 0).unwrap(),
-            GameTime::new(12, 0).unwrap(),
-            GameTime::new(14, 0).unwrap(),
-            GameTime::new(2, 0).unwrap(),
+            GameTime::new(13, 0).unwrap(),
+            GameTime::new(13, 30).unwrap(),
+            GameTime::new(1, 30).unwrap(),
+            GameTime::new(0, 30).unwrap(),
             2,
             vec![Weekday::Sat],
         );
@@ -756,8 +827,9 @@ mod tests {
             start_date(),
             GameTime::new(9, 0).unwrap(),
             GameTime::new(13, 0).unwrap(),
-            GameTime::new(14, 0).unwrap(),
-            GameTime::new(1, 0).unwrap(),
+            GameTime::new(13, 15).unwrap(),
+            GameTime::new(0, 45).unwrap(),
+            GameTime::new(0, 15).unwrap(),
             1,
             vec![Weekday::Wed, Weekday::Sat],
         );
@@ -776,9 +848,10 @@ mod tests {
         let season_config = SeasonConfig::new(
             start_date(),
             GameTime::new(9, 0).unwrap(),
-            GameTime::new(12, 0).unwrap(),
-            GameTime::new(14, 0).unwrap(),
-            GameTime::new(2, 0).unwrap(),
+            GameTime::new(12, 30).unwrap(),
+            GameTime::new(13, 0).unwrap(),
+            GameTime::new(1, 0).unwrap(),
+            GameTime::new(0, 30).unwrap(),
             2,
             vec![Weekday::Sat],
         );
@@ -798,9 +871,10 @@ mod tests {
         let season_config = SeasonConfig::new(
             start_date(),
             GameTime::new(9, 0).unwrap(),
-            GameTime::new(12, 0).unwrap(),
-            GameTime::new(13, 30).unwrap(),
-            GameTime::new(2, 0).unwrap(),
+            GameTime::new(12, 30).unwrap(),
+            GameTime::new(13, 0).unwrap(),
+            GameTime::new(1, 0).unwrap(),
+            GameTime::new(0, 30).unwrap(),
             2,
             vec![Weekday::Wed, Weekday::Sat, Weekday::Sun],
         );
@@ -819,6 +893,70 @@ mod tests {
         );
 
         assert_schedule(&schedule, &teams, &start_date(), &season_config, false);
+    }
+
+    // Test case: a game has to *finish* before the break starts, not merely
+    // kick off before it. With 45 minute games an hour apart from 9:30, the
+    // morning fits 9:30 and 10:30 (ending 10:15 and 11:15), but not 11:30,
+    // which would run to 12:15 and so 15 minutes into a 12:00 break.
+    #[test]
+    fn no_game_runs_past_the_start_of_the_break() {
+        let teams = many_teams(4);
+        let season_config = SeasonConfig::new(
+            start_date(),
+            GameTime::new(9, 30).unwrap(),
+            GameTime::new(12, 0).unwrap(),
+            GameTime::new(13, 0).unwrap(),
+            GameTime::new(0, 45).unwrap(),
+            GameTime::new(0, 15).unwrap(),
+            1,
+            vec![Weekday::Sat],
+        );
+
+        let schedule = RoundRobin
+            .compute_schedule(&teams, &start_date(), &season_config, false)
+            .unwrap();
+
+        let duration = *season_config.game_duration();
+        let start_break = *season_config.start_break();
+        for game in schedule.iter().filter(|game| !is_bye_game(game)) {
+            let kickoff = game
+                .get_game_time()
+                .expect("a real game's time should always be extractable");
+            let ends = kickoff + duration;
+            assert!(
+                kickoff >= start_break || ends <= start_break,
+                "game on {} at {kickoff} ends at {ends}, running past the {start_break} break",
+                game.get_game_day().date_naive()
+            );
+        }
+    }
+
+    // Test case: the morning's last slot is only usable if the game played
+    // in it finishes before the break. Here 6 teams on one field need 3
+    // morning slots, but only 9:30 and 10:30 leave the game finished by
+    // 12:00 — 11:30 would run to 12:15 — so the season is rejected rather
+    // than scheduled with a game overrunning the break.
+    #[test]
+    fn compute_schedule_rejects_a_slot_whose_game_would_overrun_the_break() {
+        let teams = many_teams(6);
+        let season_config = SeasonConfig::new(
+            start_date(),
+            GameTime::new(9, 30).unwrap(),
+            GameTime::new(12, 0).unwrap(),
+            GameTime::new(13, 0).unwrap(),
+            GameTime::new(0, 45).unwrap(),
+            GameTime::new(0, 15).unwrap(),
+            1,
+            vec![Weekday::Sat],
+        );
+
+        let result = RoundRobin.compute_schedule(&teams, &start_date(), &season_config, false);
+
+        assert!(matches!(
+            result,
+            Err(AppError::InsufficientDailyCapacity(3, 2))
+        ));
     }
 
     fn assert_schedule(
@@ -1009,15 +1147,16 @@ mod tests {
             "some time slot has more games than the configured number of fields"
         );
 
-        // Consecutive games on the same day respect the configured spacing
-        // between games (the gap can be larger, e.g. when it jumps over the
-        // break window, but never smaller).
+        // Consecutive games on the same day are spaced by at least a full
+        // slot (the game's own duration plus the gap after it). The spacing
+        // can be larger, e.g. when it jumps over the break window, but
+        // never smaller.
         for (day, times) in times_by_day.iter() {
             let mut sorted_times: Vec<GameTime> = times.iter().copied().collect();
             sorted_times.sort();
             for pair in sorted_times.windows(2) {
                 assert!(
-                    pair[0] + *season_config.time_between_games() <= pair[1],
+                    pair[0] + season_config.interval_between_games() <= pair[1],
                     "games on {day} at {} and {} are closer together than the configured spacing",
                     pair[0],
                     pair[1]
