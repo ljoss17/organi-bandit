@@ -22,17 +22,20 @@ pub struct SeasonConfig {
     start_time: GameTime,
     start_break: GameTime,
     end_break: GameTime,
+    game_duration: GameTime,
     time_between_games: GameTime,
     number_fields: u32,
     game_days: Vec<Weekday>,
 }
 
 impl SeasonConfig {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         start_date: NaiveDate,
         start_time: GameTime,
         start_break: GameTime,
         end_break: GameTime,
+        game_duration: GameTime,
         time_between_games: GameTime,
         number_fields: u32,
         game_days: Vec<Weekday>,
@@ -42,6 +45,7 @@ impl SeasonConfig {
             start_time,
             start_break,
             end_break,
+            game_duration,
             time_between_games,
             number_fields,
             game_days,
@@ -54,6 +58,15 @@ impl SeasonConfig {
 
     pub fn start_time(&self) -> &GameTime {
         &self.start_time
+    }
+
+    // How far apart two consecutive games start on the same field
+    pub fn interval_between_games(&self) -> GameTime {
+        self.game_duration + self.time_between_games
+    }
+
+    pub fn game_duration(&self) -> &GameTime {
+        &self.game_duration
     }
 
     pub fn time_between_games(&self) -> &GameTime {
@@ -146,7 +159,8 @@ mod tests {
             GameTime::new(9, 0).unwrap(),
             GameTime::new(12, 0).unwrap(),
             GameTime::new(13, 30).unwrap(),
-            GameTime::new(1, 30).unwrap(),
+            GameTime::new(0, 45).unwrap(),
+            GameTime::new(0, 15).unwrap(),
             2,
             vec![Weekday::Sat],
         );
@@ -161,5 +175,33 @@ mod tests {
 
         assert_eq!(season.season_config(), deserialized.season_config());
         assert_eq!(season.tournament(), deserialized.tournament());
+    }
+
+    #[test]
+    fn deserializes_the_season_config_payload_sent_by_the_frontend() {
+        let payload = r#"{
+            "startDate": "2026-05-13",
+            "startTime": {"hour": 9, "minute": 0},
+            "startBreak": {"hour": 12, "minute": 0},
+            "endBreak": {"hour": 13, "minute": 0},
+            "gameDuration": {"hour": 1, "minute": 0},
+            "timeBetweenGames": {"hour": 0, "minute": 30},
+            "numberFields": 2,
+            "gameDays": ["Sat"]
+        }"#;
+
+        let season_config: SeasonConfig =
+            serde_json::from_str(payload).expect("frontend payload should deserialize");
+
+        assert_eq!(season_config.game_duration(), &GameTime::new(1, 0).unwrap());
+        assert_eq!(
+            season_config.time_between_games(),
+            &GameTime::new(0, 30).unwrap()
+        );
+        // A slot spans the game itself plus the gap after it.
+        assert_eq!(
+            season_config.interval_between_games(),
+            GameTime::new(1, 30).unwrap()
+        );
     }
 }
