@@ -33,6 +33,14 @@ impl Tournament for RoundRobin {
             ));
         }
 
+        // A zero-length game would leave every slot starting at the same
+        // time, so the schedule could never advance. The gap after a game
+        // may legitimately be zero (back-to-back kickoffs), the game itself
+        // cannot.
+        if season_config.game_duration() == &GameTime::new(0, 0)? {
+            return Err(AppError::ZeroGameDuration);
+        }
+
         // Below 4 teams, once one team is on bye, too few opponents remain
         // to give every team two *different* opponents on a shared match
         // day — mathematically impossible regardless of how much time is
@@ -294,11 +302,11 @@ impl RoundRobin {
         );
 
         let mut slots = 0u32;
-        // Defensive iteration cap: nothing currently validates
-        // interval_between_games > 0 anywhere in the codebase (pre-existing
-        // gap, out of scope here), and a zero interval would make
-        // try_advance never change current_time, which would otherwise loop
-        // forever.
+        // Defensive iteration cap. validate_parameters rejects a zero game
+        // duration, so the interval is always positive and try_advance
+        // always moves current_time forward — but this probe doesn't depend
+        // on having been called after that check, and a zero interval would
+        // otherwise spin here forever.
         for _ in 0..(24 * 60) {
             // A slot only counts if the game played in it finishes before
             // the break starts
@@ -617,6 +625,50 @@ mod tests {
             RoundRobin.compute_schedule(&many_teams(5), &start_date(), &season_config, false);
 
         assert!(matches!(result, Err(AppError::InvalidNumberOfFields(0))));
+    }
+
+    // Test case: a game that takes no time is rejected — every slot would
+    // start at the same moment and the schedule could never advance.
+    #[test]
+    fn compute_schedule_rejects_zero_game_duration() {
+        let season_config = SeasonConfig::new(
+            start_date(),
+            GameTime::new(9, 0).unwrap(),
+            GameTime::new(12, 0).unwrap(),
+            GameTime::new(13, 30).unwrap(),
+            GameTime::new(0, 0).unwrap(),
+            GameTime::new(0, 30).unwrap(),
+            2,
+            vec![Weekday::Sat],
+        );
+
+        let result =
+            RoundRobin.compute_schedule(&many_teams(6), &start_date(), &season_config, false);
+
+        assert!(matches!(result, Err(AppError::ZeroGameDuration)));
+    }
+
+    // Test case: no gap at all between games is legitimate — one game's
+    // kickoff can follow straight on from the previous game ending.
+    #[test]
+    fn compute_schedule_accepts_zero_time_between_games() {
+        let teams = many_teams(6);
+        let season_config = SeasonConfig::new(
+            start_date(),
+            GameTime::new(9, 0).unwrap(),
+            GameTime::new(12, 0).unwrap(),
+            GameTime::new(13, 0).unwrap(),
+            GameTime::new(1, 0).unwrap(),
+            GameTime::new(0, 0).unwrap(),
+            1,
+            vec![Weekday::Sat],
+        );
+
+        let schedule = RoundRobin
+            .compute_schedule(&teams, &start_date(), &season_config, false)
+            .unwrap();
+
+        assert_schedule(&schedule, &teams, &start_date(), &season_config, false);
     }
 
     // Test case: an otherwise ordinary season config (a normal morning

@@ -33,6 +33,12 @@ impl Tournament for SingleElimination {
         if number_fields < 1 {
             return Err(AppError::InvalidNumberOfFields(number_fields));
         }
+        // A zero-length game would leave every slot starting at the same
+        // time, so the bracket could never advance. The gap after a game may
+        // legitimately be zero, the game itself cannot.
+        if season_config.game_duration() == &GameTime::new(0, 0)? {
+            return Err(AppError::ZeroGameDuration);
+        }
         Ok(())
     }
 
@@ -314,6 +320,27 @@ mod tests {
         let result = single_elimination.validate_parameters(&teams(), &season_config);
 
         assert!(matches!(result, Err(AppError::InvalidNumberOfFields(0))));
+    }
+
+    // Test case: a game that takes no time is rejected — every slot would
+    // start at the same moment and the bracket could never advance.
+    #[test]
+    fn test_single_elimination_parameter_validation_rejects_zero_game_duration() {
+        let season_config = SeasonConfig::new(
+            start_date(),
+            GameTime::new(9, 0).unwrap(),
+            GameTime::new(12, 0).unwrap(),
+            GameTime::new(13, 30).unwrap(),
+            GameTime::new(0, 0).unwrap(),
+            GameTime::new(0, 30).unwrap(),
+            2,
+            vec![Weekday::Sat],
+        );
+        let single_elimination = SingleElimination::new(false);
+
+        let result = single_elimination.validate_parameters(&teams(), &season_config);
+
+        assert!(matches!(result, Err(AppError::ZeroGameDuration)));
     }
 
     #[test]
