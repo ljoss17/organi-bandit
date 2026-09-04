@@ -3,8 +3,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::errors::AppError;
 use crate::traits::tournament::Tournament;
+use crate::types::configurations::time::TimeConfiguration;
 use crate::types::game::Game;
-use crate::types::game_time::GameTime;
 use crate::types::team::Team;
 use crate::types::tournament_selection::TournamentSelection;
 use crate::utils::game_day_scheduler::GameDayScheduler;
@@ -18,67 +18,34 @@ pub struct Season<G: Tournament, P: Tournament> {
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct SeasonConfig {
+    #[serde(flatten)]
+    time_configuration: TimeConfiguration,
     start_date: NaiveDate,
-    start_time: GameTime,
-    start_break: GameTime,
-    end_break: GameTime,
-    game_duration: GameTime,
-    time_between_games: GameTime,
     number_fields: u32,
     game_days: Vec<Weekday>,
 }
 
 impl SeasonConfig {
-    #[allow(clippy::too_many_arguments)]
     pub fn new(
+        time_configuration: TimeConfiguration,
         start_date: NaiveDate,
-        start_time: GameTime,
-        start_break: GameTime,
-        end_break: GameTime,
-        game_duration: GameTime,
-        time_between_games: GameTime,
         number_fields: u32,
         game_days: Vec<Weekday>,
     ) -> Self {
         Self {
+            time_configuration,
             start_date,
-            start_time,
-            start_break,
-            end_break,
-            game_duration,
-            time_between_games,
             number_fields,
             game_days,
         }
     }
 
+    pub fn time_configuration(&self) -> &TimeConfiguration {
+        &self.time_configuration
+    }
+
     pub fn start_date(&self) -> &NaiveDate {
         &self.start_date
-    }
-
-    pub fn start_time(&self) -> &GameTime {
-        &self.start_time
-    }
-
-    // How far apart two consecutive games start on the same field
-    pub fn interval_between_games(&self) -> GameTime {
-        self.game_duration + self.time_between_games
-    }
-
-    pub fn game_duration(&self) -> &GameTime {
-        &self.game_duration
-    }
-
-    pub fn time_between_games(&self) -> &GameTime {
-        &self.time_between_games
-    }
-
-    pub fn start_break(&self) -> &GameTime {
-        &self.start_break
-    }
-
-    pub fn end_break(&self) -> &GameTime {
-        &self.end_break
     }
 
     pub fn number_fields(&self) -> u32 {
@@ -149,18 +116,22 @@ where
 mod tests {
     use crate::impls::round_robin::RoundRobin;
     use crate::impls::single_elimination::SingleElimination;
+    use crate::types::game_time::GameTime;
 
     use super::*;
 
     #[test]
     fn test_serialize_deserialize() {
-        let season_config = SeasonConfig::new(
-            NaiveDate::from_ymd_opt(2026, 5, 13).unwrap(),
+        let time_configuration = TimeConfiguration::new(
             GameTime::new(9, 0).unwrap(),
             GameTime::new(12, 0).unwrap(),
             GameTime::new(13, 30).unwrap(),
             GameTime::new(0, 45).unwrap(),
             GameTime::new(0, 15).unwrap(),
+        );
+        let season_config = SeasonConfig::new(
+            time_configuration,
+            NaiveDate::from_ymd_opt(2026, 5, 13).unwrap(),
             2,
             vec![Weekday::Sat],
         );
@@ -193,14 +164,19 @@ mod tests {
         let season_config: SeasonConfig =
             serde_json::from_str(payload).expect("frontend payload should deserialize");
 
-        assert_eq!(season_config.game_duration(), &GameTime::new(1, 0).unwrap());
+        let time_configuration = season_config.time_configuration();
+
         assert_eq!(
-            season_config.time_between_games(),
+            time_configuration.game_duration(),
+            &GameTime::new(1, 0).unwrap()
+        );
+        assert_eq!(
+            time_configuration.time_between_games(),
             &GameTime::new(0, 30).unwrap()
         );
         // A slot spans the game itself plus the gap after it.
         assert_eq!(
-            season_config.interval_between_games(),
+            time_configuration.interval_between_games(),
             GameTime::new(1, 30).unwrap()
         );
     }

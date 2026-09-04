@@ -1,53 +1,43 @@
-use crate::types::game_time::GameTime;
+use crate::types::{configurations::time::TimeConfiguration, game_time::GameTime};
 
 pub struct GameTimeScheduler<'a> {
-    start_time: &'a GameTime,
-    // How far apart consecutive games start on the same field: the game's
-    // own duration plus the gap left after it, not the gap alone.
-    interval_between_games: &'a GameTime,
-    // How long a game itself runs. Needed on top of the interval because a
-    // boundary (the break, the hard stop) has to be judged against when a
-    // game *ends*, not just when it kicks off.
-    game_duration: &'a GameTime,
+    time_configuration: &'a TimeConfiguration,
+    // Where this leg's clock starts and resets to each day. Distinct from
+    // the season's own start_time, since the leg played after the break
+    // starts at end_break instead.
+    leg_start_time: GameTime,
     number_of_fields: u32,
     current_time: GameTime,
     current_games_per_time: u32,
-    start_break: GameTime,
-    end_break: GameTime,
     hard_stop: GameTime,
 }
 
 impl<'a> GameTimeScheduler<'a> {
     pub fn new(
-        start_time: &'a GameTime,
-        interval_between_games: &'a GameTime,
-        game_duration: &'a GameTime,
+        time_configuration: &'a TimeConfiguration,
+        leg_start_time: &GameTime,
         number_of_fields: u32,
-        start_break: &'a GameTime,
-        end_break: &'a GameTime,
     ) -> Self {
-        // When this instance starts before the break (start_break -
-        // start_time succeeds), mirror that leg's duration onto the other
-        // side of the break so both sides offer the same amount of daily
-        // room: hard_stop = end_break + (start_break - start_time). When it
-        // doesn't (this instance already starts at or after the break), the
-        // subtraction underflows and there's nothing to mirror — this side
-        // already is the reference window, so it just keeps the real fixed
-        // boundary.
-        let hard_stop = match *start_break - *start_time {
-            Ok(duration) => *end_break + duration,
+        // When this leg starts before the break (start_break -
+        // leg_start_time succeeds), mirror that leg's duration onto the
+        // other side of the break so both sides offer the same amount of
+        // daily room: hard_stop = end_break + (start_break -
+        // leg_start_time). When it doesn't (this leg already starts at or
+        // after the break), the subtraction underflows and there's nothing
+        // to mirror — this side already is the reference window, so it just
+        // keeps the real fixed boundary.
+        let leg_start_time = *leg_start_time;
+        let hard_stop = match *time_configuration.start_break() - leg_start_time {
+            Ok(duration) => *time_configuration.end_break() + duration,
             Err(_) => Self::default_hard_stop(),
         };
 
         Self {
-            start_time,
-            interval_between_games,
-            game_duration,
+            time_configuration,
+            leg_start_time,
             number_of_fields,
-            current_time: *start_time,
+            current_time: leg_start_time,
             current_games_per_time: 1,
-            start_break: *start_break,
-            end_break: *end_break,
             hard_stop,
         }
     }
@@ -71,21 +61,22 @@ impl<'a> GameTimeScheduler<'a> {
     // A game has to *finish* by the hard stop, not merely kick off before
     // it, so the game's own duration counts against the boundary too.
     pub fn is_past_hard_stop(&self) -> bool {
-        self.current_time + *self.game_duration > self.hard_stop
+        self.current_time + *self.time_configuration.game_duration() > self.hard_stop
     }
 
     // Advance the time
     pub fn try_advance(&mut self) {
         if self.current_games_per_time == self.number_of_fields {
-            let next_time = self.current_time + *self.interval_between_games;
+            let next_time = self.current_time + self.time_configuration.interval_between_games();
             // The next slot clashes with the break when the game played in
             // it would still be running once the break starts — judged on
             // when the game ends, not just when it kicks off, so a game
             // can't overrun into the break by its own duration.
-            let starts_before_break_ends = next_time < self.end_break;
-            let runs_past_break_start = next_time + *self.game_duration > self.start_break;
+            let starts_before_break_ends = next_time < *self.time_configuration.end_break();
+            let runs_past_break_start = next_time + *self.time_configuration.game_duration()
+                > *self.time_configuration.start_break();
             if starts_before_break_ends && runs_past_break_start {
-                self.current_time = self.end_break;
+                self.current_time = *self.time_configuration.end_break();
             } else {
                 self.current_time = next_time;
             }
@@ -97,7 +88,7 @@ impl<'a> GameTimeScheduler<'a> {
 
     // Reset game time to initial values
     pub fn reset(&mut self) {
-        self.current_time = *self.start_time;
+        self.current_time = self.leg_start_time;
         self.current_games_per_time = 1;
     }
 }
@@ -108,28 +99,31 @@ mod tests {
 
     #[test]
     fn test_try_advance() {
-        let start_time = GameTime::new(9, 30).unwrap();
-        let interval_between_games = GameTime::new(1, 30).unwrap();
-        let game_duration = GameTime::new(1, 0).unwrap();
-        let start_break = GameTime::new(12, 0).unwrap();
-        let end_break = GameTime::new(13, 30).unwrap();
-
-        let mut game_time_scheduler = GameTimeScheduler::new(
-            &start_time,
-            &interval_between_games,
-            &game_duration,
-            2,
-            &start_break,
-            &end_break,
+        let time_configuration = TimeConfiguration::new(
+            GameTime::new(9, 30).unwrap(),
+            GameTime::new(12, 0).unwrap(),
+            GameTime::new(13, 30).unwrap(),
+            GameTime::new(1, 0).unwrap(),
+            GameTime::new(0, 30).unwrap(),
         );
 
+        let mut game_time_scheduler =
+            GameTimeScheduler::new(&time_configuration, time_configuration.start_time(), 2);
+
         // With 2 fields, only the second try_advance() call will change the time
-        assert_eq!(game_time_scheduler.current_time(), &start_time);
+        assert_eq!(
+            game_time_scheduler.current_time(),
+            time_configuration.start_time()
+        );
 
         game_time_scheduler.try_advance();
-        assert_eq!(game_time_scheduler.current_time(), &start_time);
+        assert_eq!(
+            game_time_scheduler.current_time(),
+            time_configuration.start_time()
+        );
 
-        let expected_next_time = start_time + interval_between_games;
+        let expected_next_time =
+            *time_configuration.start_time() + time_configuration.interval_between_games();
 
         game_time_scheduler.try_advance();
         assert_eq!(game_time_scheduler.current_time(), &expected_next_time);
@@ -137,49 +131,50 @@ mod tests {
 
     #[test]
     fn test_try_advance_during_break() {
-        let start_time = GameTime::new(11, 0).unwrap();
-        let interval_between_games = GameTime::new(1, 30).unwrap();
-        let game_duration = GameTime::new(1, 0).unwrap();
-        let start_break = GameTime::new(12, 0).unwrap();
-        let end_break = GameTime::new(13, 30).unwrap();
-
-        let mut game_time_scheduler = GameTimeScheduler::new(
-            &start_time,
-            &interval_between_games,
-            &game_duration,
-            2,
-            &start_break,
-            &end_break,
+        let time_configuration = TimeConfiguration::new(
+            GameTime::new(11, 0).unwrap(),
+            GameTime::new(12, 0).unwrap(),
+            GameTime::new(13, 30).unwrap(),
+            GameTime::new(1, 0).unwrap(),
+            GameTime::new(0, 30).unwrap(),
         );
 
+        let mut game_time_scheduler =
+            GameTimeScheduler::new(&time_configuration, time_configuration.start_time(), 2);
+
         // With 2 fields, only the second try_advance() call will change the time
-        assert_eq!(game_time_scheduler.current_time(), &start_time);
+        assert_eq!(
+            game_time_scheduler.current_time(),
+            time_configuration.start_time()
+        );
 
         game_time_scheduler.try_advance();
-        assert_eq!(game_time_scheduler.current_time(), &start_time);
+        assert_eq!(
+            game_time_scheduler.current_time(),
+            time_configuration.start_time()
+        );
 
         // Since the next time will happen during the break,
         // the current_time is set to the end of the break
         game_time_scheduler.try_advance();
-        assert_eq!(game_time_scheduler.current_time(), &end_break);
+        assert_eq!(
+            game_time_scheduler.current_time(),
+            time_configuration.end_break()
+        );
     }
 
     #[test]
     fn test_reset_then_advance() {
-        let start_time = GameTime::new(9, 30).unwrap();
-        let interval_between_games = GameTime::new(1, 30).unwrap();
-        let game_duration = GameTime::new(1, 0).unwrap();
-        let start_break = GameTime::new(12, 0).unwrap();
-        let end_break = GameTime::new(13, 30).unwrap();
-
-        let mut game_time_scheduler = GameTimeScheduler::new(
-            &start_time,
-            &interval_between_games,
-            &game_duration,
-            2,
-            &start_break,
-            &end_break,
+        let time_configuration = TimeConfiguration::new(
+            GameTime::new(9, 30).unwrap(),
+            GameTime::new(12, 0).unwrap(),
+            GameTime::new(13, 30).unwrap(),
+            GameTime::new(1, 0).unwrap(),
+            GameTime::new(0, 30).unwrap(),
         );
+
+        let mut game_time_scheduler =
+            GameTimeScheduler::new(&time_configuration, time_configuration.start_time(), 2);
 
         // Move state away from its initial values first, so reset() is actually exercised
         game_time_scheduler.try_advance();
@@ -189,12 +184,19 @@ mod tests {
         game_time_scheduler.reset();
 
         // Expect current time to be the start time after reset
-        assert_eq!(game_time_scheduler.current_time(), &start_time);
+        assert_eq!(
+            game_time_scheduler.current_time(),
+            time_configuration.start_time()
+        );
 
         game_time_scheduler.try_advance();
-        assert_eq!(game_time_scheduler.current_time(), &start_time);
+        assert_eq!(
+            game_time_scheduler.current_time(),
+            time_configuration.start_time()
+        );
 
-        let expected_next_time = start_time + interval_between_games;
+        let expected_next_time =
+            *time_configuration.start_time() + time_configuration.interval_between_games();
 
         game_time_scheduler.try_advance();
         assert_eq!(game_time_scheduler.current_time(), &expected_next_time);
@@ -202,40 +204,32 @@ mod tests {
 
     #[test]
     fn is_past_hard_stop_false_before_17_00() {
-        let start_time = GameTime::new(16, 30).unwrap();
-        let interval_between_games = GameTime::new(0, 30).unwrap();
-        let game_duration = GameTime::new(0, 30).unwrap();
-        let start_break = GameTime::new(12, 0).unwrap();
-        let end_break = GameTime::new(13, 30).unwrap();
-
-        let game_time_scheduler = GameTimeScheduler::new(
-            &start_time,
-            &interval_between_games,
-            &game_duration,
-            1,
-            &start_break,
-            &end_break,
+        let time_configuration = TimeConfiguration::new(
+            GameTime::new(16, 30).unwrap(),
+            GameTime::new(12, 0).unwrap(),
+            GameTime::new(13, 30).unwrap(),
+            GameTime::new(0, 30).unwrap(),
+            GameTime::new(0, 0).unwrap(),
         );
+
+        let game_time_scheduler =
+            GameTimeScheduler::new(&time_configuration, time_configuration.start_time(), 1);
 
         assert!(!game_time_scheduler.is_past_hard_stop());
     }
 
     #[test]
     fn is_past_hard_stop_true_after_17_00() {
-        let start_time = GameTime::new(17, 30).unwrap();
-        let interval_between_games = GameTime::new(0, 30).unwrap();
-        let game_duration = GameTime::new(0, 30).unwrap();
-        let start_break = GameTime::new(12, 0).unwrap();
-        let end_break = GameTime::new(13, 30).unwrap();
-
-        let game_time_scheduler = GameTimeScheduler::new(
-            &start_time,
-            &interval_between_games,
-            &game_duration,
-            1,
-            &start_break,
-            &end_break,
+        let time_configuration = TimeConfiguration::new(
+            GameTime::new(17, 30).unwrap(),
+            GameTime::new(12, 0).unwrap(),
+            GameTime::new(13, 30).unwrap(),
+            GameTime::new(0, 30).unwrap(),
+            GameTime::new(0, 0).unwrap(),
         );
+
+        let game_time_scheduler =
+            GameTimeScheduler::new(&time_configuration, time_configuration.start_time(), 1);
 
         assert!(game_time_scheduler.is_past_hard_stop());
     }

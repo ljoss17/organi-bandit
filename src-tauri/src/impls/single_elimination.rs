@@ -36,7 +36,7 @@ impl Tournament for SingleElimination {
         // A zero-length game would leave every slot starting at the same
         // time, so the bracket could never advance. The gap after a game may
         // legitimately be zero, the game itself cannot.
-        if season_config.game_duration() == &GameTime::new(0, 0)? {
+        if season_config.time_configuration().game_duration() == &GameTime::new(0, 0)? {
             return Err(AppError::ZeroGameDuration);
         }
         Ok(())
@@ -51,6 +51,7 @@ impl Tournament for SingleElimination {
         _with_referees: bool,
     ) -> Result<Vec<Game>, AppError> {
         self.validate_parameters(teams, season_config)?;
+        let time_configuration = season_config.time_configuration();
         let number_of_teams = teams.len();
         let bracket_size = number_of_teams.next_power_of_two();
         let number_of_byes = bracket_size - number_of_teams;
@@ -74,14 +75,10 @@ impl Tournament for SingleElimination {
 
         let mut schedule = Vec::with_capacity(bracket_size - 1);
         let mut game_day_scheduler = GameDayScheduler::new(start_date, season_config.game_days())?;
-        let interval = season_config.interval_between_games();
         let mut game_time_scheduler = GameTimeScheduler::new(
-            season_config.start_time(),
-            &interval,
-            season_config.game_duration(),
+            time_configuration,
+            time_configuration.start_time(),
             season_config.number_fields(),
-            season_config.start_break(),
-            season_config.end_break(),
         );
 
         let bye_time = GameTime::new(0, 0)?;
@@ -234,7 +231,7 @@ mod tests {
     use super::*;
     use chrono::{Datelike, Weekday};
 
-    use crate::types::game_time::GameTime;
+    use crate::types::{configurations::time::TimeConfiguration, game_time::GameTime};
 
     fn start_date() -> NaiveDate {
         NaiveDate::from_ymd_opt(2026, 5, 13).unwrap()
@@ -266,16 +263,15 @@ mod tests {
 
     #[test]
     fn test_single_elimination_valid_parameter_validation_1() {
-        let season_config = SeasonConfig::new(
-            start_date(),
+        let time_configuration = TimeConfiguration::new(
             GameTime::new(9, 0).unwrap(),
             GameTime::new(12, 0).unwrap(),
             GameTime::new(13, 30).unwrap(),
             GameTime::new(1, 0).unwrap(),
             GameTime::new(0, 30).unwrap(),
-            1,
-            vec![Weekday::Sat],
         );
+        let season_config =
+            SeasonConfig::new(time_configuration, start_date(), 1, vec![Weekday::Sat]);
         let single_elimination = SingleElimination::new(false);
 
         let result = single_elimination.validate_parameters(&teams(), &season_config);
@@ -285,16 +281,15 @@ mod tests {
 
     #[test]
     fn test_single_elimination_parameter_validation_rejects_too_few_teams() {
-        let season_config = SeasonConfig::new(
-            start_date(),
+        let time_configuration = TimeConfiguration::new(
             GameTime::new(9, 0).unwrap(),
             GameTime::new(12, 0).unwrap(),
             GameTime::new(13, 30).unwrap(),
             GameTime::new(1, 0).unwrap(),
             GameTime::new(0, 30).unwrap(),
-            1,
-            vec![Weekday::Sat],
         );
+        let season_config =
+            SeasonConfig::new(time_configuration, start_date(), 1, vec![Weekday::Sat]);
         let single_elimination = SingleElimination::new(false);
 
         let result =
@@ -305,16 +300,15 @@ mod tests {
 
     #[test]
     fn test_single_elimination_parameter_validation_rejects_zero_fields() {
-        let season_config = SeasonConfig::new(
-            start_date(),
+        let time_configuration = TimeConfiguration::new(
             GameTime::new(9, 0).unwrap(),
             GameTime::new(12, 0).unwrap(),
             GameTime::new(13, 30).unwrap(),
             GameTime::new(1, 0).unwrap(),
             GameTime::new(0, 30).unwrap(),
-            0,
-            vec![Weekday::Sat],
         );
+        let season_config =
+            SeasonConfig::new(time_configuration, start_date(), 0, vec![Weekday::Sat]);
         let single_elimination = SingleElimination::new(false);
 
         let result = single_elimination.validate_parameters(&teams(), &season_config);
@@ -326,16 +320,15 @@ mod tests {
     // start at the same moment and the bracket could never advance.
     #[test]
     fn test_single_elimination_parameter_validation_rejects_zero_game_duration() {
-        let season_config = SeasonConfig::new(
-            start_date(),
+        let time_configuration = TimeConfiguration::new(
             GameTime::new(9, 0).unwrap(),
             GameTime::new(12, 0).unwrap(),
             GameTime::new(13, 30).unwrap(),
             GameTime::new(0, 0).unwrap(),
             GameTime::new(0, 30).unwrap(),
-            2,
-            vec![Weekday::Sat],
         );
+        let season_config =
+            SeasonConfig::new(time_configuration, start_date(), 2, vec![Weekday::Sat]);
         let single_elimination = SingleElimination::new(false);
 
         let result = single_elimination.validate_parameters(&teams(), &season_config);
@@ -345,16 +338,15 @@ mod tests {
 
     #[test]
     fn compute_schedule_rejects_empty_teams() {
-        let season_config = SeasonConfig::new(
-            start_date(),
+        let time_configuration = TimeConfiguration::new(
             GameTime::new(9, 0).unwrap(),
             GameTime::new(12, 0).unwrap(),
             GameTime::new(13, 30).unwrap(),
             GameTime::new(1, 0).unwrap(),
             GameTime::new(0, 30).unwrap(),
-            1,
-            vec![Weekday::Sat],
         );
+        let season_config =
+            SeasonConfig::new(time_configuration, start_date(), 1, vec![Weekday::Sat]);
 
         let result = SingleElimination::new(false).compute_schedule(
             &[],
@@ -368,16 +360,15 @@ mod tests {
 
     #[test]
     fn compute_schedule_rejects_zero_fields() {
-        let season_config = SeasonConfig::new(
-            start_date(),
+        let time_configuration = TimeConfiguration::new(
             GameTime::new(9, 0).unwrap(),
             GameTime::new(12, 0).unwrap(),
             GameTime::new(13, 30).unwrap(),
             GameTime::new(1, 0).unwrap(),
             GameTime::new(0, 30).unwrap(),
-            0,
-            vec![Weekday::Sat],
         );
+        let season_config =
+            SeasonConfig::new(time_configuration, start_date(), 0, vec![Weekday::Sat]);
 
         let result = SingleElimination::new(false).compute_schedule(
             &teams(),
@@ -393,16 +384,14 @@ mod tests {
     // valid starting day.
     #[test]
     fn compute_schedule_rejects_empty_game_days() {
-        let season_config = SeasonConfig::new(
-            start_date(),
+        let time_configuration = TimeConfiguration::new(
             GameTime::new(9, 0).unwrap(),
             GameTime::new(12, 0).unwrap(),
             GameTime::new(13, 30).unwrap(),
             GameTime::new(1, 0).unwrap(),
             GameTime::new(0, 30).unwrap(),
-            1,
-            vec![],
         );
+        let season_config = SeasonConfig::new(time_configuration, start_date(), 1, vec![]);
 
         let result = SingleElimination::new(false).compute_schedule(
             &teams(),
@@ -416,16 +405,15 @@ mod tests {
 
     #[test]
     fn test_single_elimination_schedule_3_rounds() {
-        let season_config = SeasonConfig::new(
-            start_date(),
+        let time_configuration = TimeConfiguration::new(
             GameTime::new(9, 0).unwrap(),
             GameTime::new(12, 0).unwrap(),
             GameTime::new(13, 30).unwrap(),
             GameTime::new(1, 0).unwrap(),
             GameTime::new(0, 30).unwrap(),
-            2,
-            vec![Weekday::Sat],
         );
+        let season_config =
+            SeasonConfig::new(time_configuration, start_date(), 2, vec![Weekday::Sat]);
 
         let single_elimination = SingleElimination::new(false);
 
@@ -441,16 +429,15 @@ mod tests {
 
     #[test]
     fn test_single_elimination_schedule_4_rounds() {
-        let season_config = SeasonConfig::new(
-            start_date(),
+        let time_configuration = TimeConfiguration::new(
             GameTime::new(9, 0).unwrap(),
             GameTime::new(12, 0).unwrap(),
             GameTime::new(13, 30).unwrap(),
             GameTime::new(1, 0).unwrap(),
             GameTime::new(0, 30).unwrap(),
-            2,
-            vec![Weekday::Sat],
         );
+        let season_config =
+            SeasonConfig::new(time_configuration, start_date(), 2, vec![Weekday::Sat]);
 
         let single_elimination = SingleElimination::new(false);
 
@@ -473,16 +460,15 @@ mod tests {
         // 9 teams needs 4 rounds (bracket of 16), so rounds 3 and 4 both
         // exist, letting this check that the day actually advances between
         // them rather than both landing on the same calendar day.
-        let season_config = SeasonConfig::new(
-            start_date(),
+        let time_configuration = TimeConfiguration::new(
             GameTime::new(9, 0).unwrap(),
             GameTime::new(12, 0).unwrap(),
             GameTime::new(13, 30).unwrap(),
             GameTime::new(1, 0).unwrap(),
             GameTime::new(0, 30).unwrap(),
-            2,
-            vec![Weekday::Sat],
         );
+        let season_config =
+            SeasonConfig::new(time_configuration, start_date(), 2, vec![Weekday::Sat]);
 
         let teams = teams_bigger();
         let schedule = SingleElimination::new(false)
@@ -516,13 +502,16 @@ mod tests {
         // wrapping back around, colliding with a time already used earlier
         // that same day, the same failure mode found in round_robin.rs.
         let teams: Vec<Team> = (0..32).map(|i| Team::new(&format!("T{i}"), None)).collect();
-        let season_config = SeasonConfig::new(
-            start_date(),
+        let time_configuration = TimeConfiguration::new(
             GameTime::new(9, 0).unwrap(),
             GameTime::new(12, 0).unwrap(),
             GameTime::new(13, 30).unwrap(),
             GameTime::new(1, 0).unwrap(),
             GameTime::new(0, 30).unwrap(),
+        );
+        let season_config = SeasonConfig::new(
+            time_configuration,
+            start_date(),
             1,
             vec![Weekday::Wed, Weekday::Sat],
         );
@@ -555,13 +544,16 @@ mod tests {
     #[test]
     fn test_round_2_respects_single_field_capacity() {
         let teams: Vec<Team> = (0..20).map(|i| Team::new(&format!("T{i}"), None)).collect();
-        let season_config = SeasonConfig::new(
-            start_date(),
+        let time_configuration = TimeConfiguration::new(
             GameTime::new(9, 0).unwrap(),
             GameTime::new(12, 0).unwrap(),
             GameTime::new(20, 0).unwrap(),
             GameTime::new(1, 0).unwrap(),
             GameTime::new(0, 30).unwrap(),
+        );
+        let season_config = SeasonConfig::new(
+            time_configuration,
+            start_date(),
             1,
             vec![Weekday::Wed, Weekday::Sat],
         );
@@ -579,16 +571,15 @@ mod tests {
     #[test]
     fn test_break_window_within_game_time_range() {
         let teams = teams_bigger();
-        let season_config = SeasonConfig::new(
-            start_date(),
+        let time_configuration = TimeConfiguration::new(
             GameTime::new(9, 0).unwrap(),
             GameTime::new(11, 0).unwrap(),
             GameTime::new(12, 30).unwrap(),
             GameTime::new(0, 45).unwrap(),
             GameTime::new(0, 15).unwrap(),
-            2,
-            vec![Weekday::Sat],
         );
+        let season_config =
+            SeasonConfig::new(time_configuration, start_date(), 2, vec![Weekday::Sat]);
 
         let schedule = SingleElimination::new(false)
             .compute_schedule(&teams, &start_date(), &season_config, false)
@@ -599,16 +590,15 @@ mod tests {
 
     #[test]
     fn test_single_elimination_anonymous_mode() {
-        let season_config = SeasonConfig::new(
-            start_date(),
+        let time_configuration = TimeConfiguration::new(
             GameTime::new(9, 0).unwrap(),
             GameTime::new(12, 0).unwrap(),
             GameTime::new(13, 30).unwrap(),
             GameTime::new(1, 0).unwrap(),
             GameTime::new(0, 30).unwrap(),
-            2,
-            vec![Weekday::Sat],
         );
+        let season_config =
+            SeasonConfig::new(time_configuration, start_date(), 2, vec![Weekday::Sat]);
 
         let single_elimination = SingleElimination::new(true);
 
@@ -638,16 +628,15 @@ mod tests {
             Team::new("Seed 4", Some(4)),
             Team::new("Seed 5", Some(5)),
         ];
-        let season_config = SeasonConfig::new(
-            start_date(),
+        let time_configuration = TimeConfiguration::new(
             GameTime::new(9, 0).unwrap(),
             GameTime::new(12, 0).unwrap(),
             GameTime::new(13, 30).unwrap(),
             GameTime::new(1, 0).unwrap(),
             GameTime::new(0, 30).unwrap(),
-            2,
-            vec![Weekday::Sat],
         );
+        let season_config =
+            SeasonConfig::new(time_configuration, start_date(), 2, vec![Weekday::Sat]);
 
         let schedule = SingleElimination::new(false)
             .compute_schedule(&teams, &start_date(), &season_config, false)
@@ -680,16 +669,15 @@ mod tests {
             Team::new("C", None),
             Team::new("D", None),
         ];
-        let season_config = SeasonConfig::new(
-            start_date(),
+        let time_configuration = TimeConfiguration::new(
             GameTime::new(9, 0).unwrap(),
             GameTime::new(12, 0).unwrap(),
             GameTime::new(13, 30).unwrap(),
             GameTime::new(1, 0).unwrap(),
             GameTime::new(0, 30).unwrap(),
-            2,
-            vec![Weekday::Sat],
         );
+        let season_config =
+            SeasonConfig::new(time_configuration, start_date(), 2, vec![Weekday::Sat]);
 
         let schedule = SingleElimination::new(false)
             .compute_schedule(&teams, &start_date(), &season_config, false)
@@ -708,16 +696,15 @@ mod tests {
     #[test]
     fn test_single_elimination_two_teams_minimal_bracket() {
         let teams = [Team::new("A", None), Team::new("B", None)];
-        let season_config = SeasonConfig::new(
-            start_date(),
+        let time_configuration = TimeConfiguration::new(
             GameTime::new(9, 0).unwrap(),
             GameTime::new(12, 0).unwrap(),
             GameTime::new(13, 30).unwrap(),
             GameTime::new(1, 0).unwrap(),
             GameTime::new(0, 30).unwrap(),
-            1,
-            vec![Weekday::Sat],
         );
+        let season_config =
+            SeasonConfig::new(time_configuration, start_date(), 1, vec![Weekday::Sat]);
 
         let schedule = SingleElimination::new(false)
             .compute_schedule(&teams, &start_date(), &season_config, false)
@@ -733,16 +720,15 @@ mod tests {
             Team::new("B", None),
             Team::new("C", None),
         ];
-        let season_config = SeasonConfig::new(
-            start_date(),
+        let time_configuration = TimeConfiguration::new(
             GameTime::new(9, 0).unwrap(),
             GameTime::new(12, 0).unwrap(),
             GameTime::new(13, 30).unwrap(),
             GameTime::new(1, 0).unwrap(),
             GameTime::new(0, 30).unwrap(),
-            1,
-            vec![Weekday::Sat],
         );
+        let season_config =
+            SeasonConfig::new(time_configuration, start_date(), 1, vec![Weekday::Sat]);
 
         let schedule = SingleElimination::new(false)
             .compute_schedule(&teams, &start_date(), &season_config, false)
@@ -761,16 +747,15 @@ mod tests {
             Team::new("E", None),
             Team::new("F", None),
         ];
-        let season_config = SeasonConfig::new(
-            start_date(),
+        let time_configuration = TimeConfiguration::new(
             GameTime::new(9, 0).unwrap(),
             GameTime::new(12, 0).unwrap(),
             GameTime::new(13, 30).unwrap(),
             GameTime::new(1, 0).unwrap(),
             GameTime::new(0, 30).unwrap(),
-            2,
-            vec![Weekday::Sat],
         );
+        let season_config =
+            SeasonConfig::new(time_configuration, start_date(), 2, vec![Weekday::Sat]);
 
         let schedule = SingleElimination::new(false)
             .compute_schedule(&teams, &start_date(), &season_config, false)
