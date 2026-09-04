@@ -1,8 +1,8 @@
-use chrono::{NaiveDate, Weekday};
 use serde::{Deserialize, Serialize};
 
 use crate::errors::AppError;
 use crate::traits::tournament::Tournament;
+use crate::types::configurations::date::DateConfiguration;
 use crate::types::configurations::time::TimeConfiguration;
 use crate::types::game::Game;
 use crate::types::team::Team;
@@ -20,23 +20,21 @@ pub struct Season<G: Tournament, P: Tournament> {
 pub struct SeasonConfig {
     #[serde(flatten)]
     time_configuration: TimeConfiguration,
-    start_date: NaiveDate,
+    #[serde(flatten)]
+    date_configuration: DateConfiguration,
     number_fields: u32,
-    game_days: Vec<Weekday>,
 }
 
 impl SeasonConfig {
     pub fn new(
         time_configuration: TimeConfiguration,
-        start_date: NaiveDate,
+        date_configuration: DateConfiguration,
         number_fields: u32,
-        game_days: Vec<Weekday>,
     ) -> Self {
         Self {
             time_configuration,
-            start_date,
+            date_configuration,
             number_fields,
-            game_days,
         }
     }
 
@@ -44,16 +42,12 @@ impl SeasonConfig {
         &self.time_configuration
     }
 
-    pub fn start_date(&self) -> &NaiveDate {
-        &self.start_date
+    pub fn date_configuration(&self) -> &DateConfiguration {
+        &self.date_configuration
     }
 
     pub fn number_fields(&self) -> u32 {
         self.number_fields
-    }
-
-    pub fn game_days(&self) -> &[Weekday] {
-        &self.game_days
     }
 }
 
@@ -80,7 +74,7 @@ where
     pub fn compute_season_schedule(&self, teams: &[Team]) -> Result<Vec<Game>, AppError> {
         let group_stage_schedule = self.tournament().group_stage().compute_schedule(
             teams,
-            self.season_config().start_date(),
+            self.season_config().date_configuration().start_date(),
             self.season_config(),
             true,
         )?;
@@ -91,8 +85,10 @@ where
             .get_game_day()
             .date_naive();
 
-        let mut game_day_scheduler =
-            GameDayScheduler::new(&last_group_stage_day, self.season_config().game_days())?;
+        let mut game_day_scheduler = GameDayScheduler::new(
+            &last_group_stage_day,
+            self.season_config().date_configuration().game_days(),
+        )?;
         game_day_scheduler.advance();
 
         // Note: Currently playoffs are fixed to quarter finales -> finals
@@ -114,6 +110,8 @@ where
 
 #[cfg(test)]
 mod tests {
+    use chrono::{NaiveDate, Weekday};
+
     use crate::impls::round_robin::RoundRobin;
     use crate::impls::single_elimination::SingleElimination;
     use crate::types::game_time::GameTime;
@@ -129,12 +127,11 @@ mod tests {
             GameTime::new(0, 45).unwrap(),
             GameTime::new(0, 15).unwrap(),
         );
-        let season_config = SeasonConfig::new(
-            time_configuration,
+        let date_configuration = DateConfiguration::new(
             NaiveDate::from_ymd_opt(2026, 5, 13).unwrap(),
-            2,
             vec![Weekday::Sat],
         );
+        let season_config = SeasonConfig::new(time_configuration, date_configuration, 2);
         let season = Season::new(
             season_config,
             TournamentSelection::new(RoundRobin, SingleElimination::new(false)),
