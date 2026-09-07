@@ -1,6 +1,6 @@
 [package]
 name        = "organi-bandit"
-version     = "0.2.0"
+version     = "0.2.1"
 description = "A desktop application that generates a flag football season schedule as a spreadsheet"
 authors     = [ "Luca Joss <43531661+ljoss17@users.noreply.github.com>" ]
 edition     = "2021"

@@ -8,6 +8,14 @@ Unreleased changes are tracked as fragments in [`changelog.d/`](changelog.d/READ
 
 <!-- towncrier release notes start -->
 
+## [0.2.1] - 2026-09-07
+
+### Fixed
+
+- The app now actually checks for updates on launch. The update check was previously rejected by the app's own permissions and the failure was never shown, so no version ever updated itself. Failures are now reported in the window instead of being discarded. ([#13](https://github.com/ljoss17/organi-bandit/issues/13))
+- The Windows installer now asks whether to install the app for the current user only or for all users, instead of always installing it for the current user without asking. ([#14](https://github.com/ljoss17/organi-bandit/issues/14))
+
+
 ## [0.2.0] - 2026-09-07
 
 ### Added
