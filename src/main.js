@@ -92,11 +92,18 @@ function parseChangelog(markdown) {
 
     const entryMatch = line.match(/^- (.+)$/);
     if (entryMatch && currentCategory) {
-      currentCategory.entries.push(entryMatch[1]);
+      currentCategory.entries.push(stripMarkdownLinks(entryMatch[1]));
     }
   });
 
   return versions;
+}
+
+// Entries carry issue links as markdown, which reads correctly on GitHub and
+// in the release notes. Here the text is rendered as-is into the DOM, so the
+// link is reduced to the label it wraps rather than showing its URL.
+function stripMarkdownLinks(text) {
+  return text.replace(/\[([^\]]+)\]\([^)]*\)/g, "$1");
 }
 
 function renderChangelog(versions) {
