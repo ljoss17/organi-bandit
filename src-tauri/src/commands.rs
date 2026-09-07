@@ -16,6 +16,8 @@ use crate::types::season::{Season, SeasonConfig};
 use crate::types::team::Team;
 use crate::types::tournament_selection::TournamentSelection;
 
+const ROWS_BEFORE_DAY_BLOCK: u32 = 2;
+
 #[tauri::command]
 pub fn tauri_generate_schedule(
     teams: Vec<Team>,
@@ -34,6 +36,7 @@ pub fn generate_excel_schedule(
     schedule: Vec<Game>,
     start_break: GameTime,
     end_break: GameTime,
+    excluded_dates: Vec<NaiveDate>,
     number_fields: u16,
     output_directory_path: String,
     language: &str,
@@ -57,12 +60,14 @@ pub fn generate_excel_schedule(
         worksheet.set_column_width(5 * i + 2, 4)?;
     }
 
+    write_excluded_dates_column(worksheet, &excluded_dates, number_fields, language)?;
+
     let mut day_index = 1;
 
     for game in sorted_schedule.iter() {
         let game_day = game.get_game_day();
         if current_day != Some(game_day.date_naive()) {
-            row += 2;
+            row += ROWS_BEFORE_DAY_BLOCK;
             write_day_row(worksheet, row, game_day, day_index, number_fields, language)?;
             day_index += 1;
             current_day = Some(game_day.date_naive());
@@ -114,6 +119,81 @@ pub fn generate_excel_schedule(
     }
     workbook.save(path)?;
     Ok(())
+}
+
+fn write_excluded_dates_column(
+    worksheet: &mut Worksheet,
+    excluded_dates: &[NaiveDate],
+    number_fields: u16,
+    language: &str,
+) -> Result<(), AppError> {
+    if excluded_dates.is_empty() {
+        return Ok(());
+    }
+
+    let column = number_fields * 5 + 1;
+    let header_format = Format::new()
+        .set_align(FormatAlign::Center)
+        .set_align(FormatAlign::VerticalCenter)
+        .set_border(FormatBorder::Thin)
+        .set_background_color(Color::Silver);
+    let date_format = Format::new()
+        .set_align(FormatAlign::Center)
+        .set_align(FormatAlign::VerticalCenter)
+        .set_border(FormatBorder::Thin);
+
+    worksheet.write_with_format(
+        ROWS_BEFORE_DAY_BLOCK,
+        column,
+        t!("excluded_dates", locale = language),
+        &header_format,
+    )?;
+
+    for (index, group) in group_consecutive_dates(excluded_dates).iter().enumerate() {
+        worksheet.write_with_format(
+            ROWS_BEFORE_DAY_BLOCK + 1 + index as u32,
+            column,
+            group,
+            &date_format,
+        )?;
+    }
+
+    Ok(())
+}
+
+// Collapses runs of consecutive days into a single entry, so a week off
+// reads as "10/09/2026 - 13/09/2026" rather than four separate lines. Input
+// order doesn't matter, and repeated dates collapse into one.
+fn group_consecutive_dates(dates: &[NaiveDate]) -> Vec<String> {
+    let mut sorted_dates = dates.to_vec();
+    sorted_dates.sort();
+    sorted_dates.dedup();
+
+    let mut groups = Vec::new();
+    let mut index = 0;
+    while index < sorted_dates.len() {
+        let start = sorted_dates[index];
+        let mut end = start;
+
+        // Walk forward while the next date is exactly the day after the
+        // one the run currently ends on.
+        while let Some(next_day) = end.succ_opt() {
+            if sorted_dates.get(index + 1) != Some(&next_day) {
+                break;
+            }
+            index += 1;
+            end = next_day;
+        }
+
+        groups.push(if start == end {
+            start.format("%d/%m/%Y").to_string()
+        } else {
+            format!("{} - {}", start.format("%d/%m/%Y"), end.format("%d/%m/%Y"))
+        });
+        index += 1;
+    }
+
+    groups
 }
 
 fn write_break_row(
@@ -299,6 +379,7 @@ mod tests {
             vec![],
             GameTime::new(12, 0).unwrap(),
             GameTime::new(13, 30).unwrap(),
+            vec![],
             1,
             output_dir.to_string_lossy().to_string(),
             "en",
@@ -306,6 +387,136 @@ mod tests {
 
         assert!(result.is_ok());
         remove_dir_all(&output_dir).unwrap();
+    }
+
+    #[test]
+    fn generate_excel_schedule_writes_the_excluded_dates() {
+        use crate::types::game_time::GameTime;
+
+        let game = Game::new_with_game_day(
+            Team::new("Home", None),
+            Team::new("Away", None),
+            chrono::NaiveDate::from_ymd_opt(2026, 5, 13).unwrap(),
+            GameTime::new(9, 0).unwrap(),
+            None,
+        )
+        .unwrap();
+        let output_dir = temp_output_dir("excluded-dates-column");
+
+        generate_excel_schedule(
+            vec![game],
+            GameTime::new(12, 0).unwrap(),
+            GameTime::new(13, 30).unwrap(),
+            vec![
+                chrono::NaiveDate::from_ymd_opt(2026, 7, 4).unwrap(),
+                chrono::NaiveDate::from_ymd_opt(2026, 5, 16).unwrap(),
+            ],
+            1,
+            output_dir.to_string_lossy().to_string(),
+            "en",
+        )
+        .unwrap();
+
+        let output = std::process::Command::new("unzip")
+            .arg("-p")
+            .arg(output_dir.join("calendrier_2026_en.xlsx"))
+            .arg("xl/sharedStrings.xml")
+            .output()
+            .unwrap();
+        let contents = String::from_utf8_lossy(&output.stdout);
+
+        assert!(contents.contains("Excluded dates"), "{contents}");
+
+        let first = contents.find("16/05/2026").expect("missing 16/05/2026");
+        let second = contents.find("04/07/2026").expect("missing 04/07/2026");
+        assert!(first < second, "excluded dates are not sorted: {contents}");
+
+        let sheet = std::process::Command::new("unzip")
+            .arg("-p")
+            .arg(output_dir.join("calendrier_2026_en.xlsx"))
+            .arg("xl/worksheets/sheet1.xml")
+            .output()
+            .unwrap();
+        let sheet = String::from_utf8_lossy(&sheet.stdout);
+        assert!(sheet.contains("r=\"G3\""), "no cell at G3: {sheet}");
+        assert!(sheet.contains("r=\"G4\""), "no cell at G4: {sheet}");
+
+        remove_dir_all(&output_dir).unwrap();
+    }
+
+    fn date(year: i32, month: u32, day: u32) -> NaiveDate {
+        NaiveDate::from_ymd_opt(year, month, day).unwrap()
+    }
+
+    #[test]
+    fn group_consecutive_dates_keeps_a_lone_date_on_its_own() {
+        let groups = group_consecutive_dates(&[date(2026, 9, 10)]);
+
+        assert_eq!(groups, vec!["10/09/2026"]);
+    }
+
+    #[test]
+    fn group_consecutive_dates_collapses_a_run_into_a_range() {
+        let groups = group_consecutive_dates(&[
+            date(2026, 9, 10),
+            date(2026, 9, 11),
+            date(2026, 9, 12),
+            date(2026, 9, 13),
+        ]);
+
+        assert_eq!(groups, vec!["10/09/2026 - 13/09/2026"]);
+    }
+
+    #[test]
+    fn group_consecutive_dates_separates_runs_with_a_gap_between_them() {
+        let groups = group_consecutive_dates(&[
+            date(2026, 9, 10),
+            date(2026, 9, 11),
+            date(2026, 9, 20),
+            date(2026, 9, 21),
+            date(2026, 9, 25),
+        ]);
+
+        assert_eq!(
+            groups,
+            vec![
+                "10/09/2026 - 11/09/2026",
+                "20/09/2026 - 21/09/2026",
+                "25/09/2026"
+            ]
+        );
+    }
+
+    #[test]
+    fn group_consecutive_dates_spans_month_and_year_boundaries() {
+        let groups = group_consecutive_dates(&[
+            date(2026, 9, 30),
+            date(2026, 10, 1),
+            date(2026, 12, 31),
+            date(2027, 1, 1),
+        ]);
+
+        assert_eq!(
+            groups,
+            vec!["30/09/2026 - 01/10/2026", "31/12/2026 - 01/01/2027"]
+        );
+    }
+
+    #[test]
+    fn group_consecutive_dates_sorts_and_deduplicates_its_input() {
+        let groups = group_consecutive_dates(&[
+            date(2026, 9, 12),
+            date(2026, 9, 10),
+            date(2026, 9, 11),
+            date(2026, 9, 10),
+        ]);
+
+        assert_eq!(groups, vec!["10/09/2026 - 12/09/2026"]);
+    }
+
+    #[test]
+    fn group_consecutive_dates_returns_nothing_for_no_dates() {
+        assert!(group_consecutive_dates(&[]).is_empty());
     }
 
     #[test]
@@ -326,6 +537,7 @@ mod tests {
             vec![game],
             GameTime::new(12, 0).unwrap(),
             GameTime::new(13, 30).unwrap(),
+            vec![],
             1,
             output_dir.to_string_lossy().to_string(),
             "en",
@@ -356,6 +568,7 @@ mod tests {
             vec![game],
             GameTime::new(12, 0).unwrap(),
             GameTime::new(13, 30).unwrap(),
+            vec![],
             1,
             output_dir.to_string_lossy().to_string(),
             "en",
@@ -388,6 +601,7 @@ mod tests {
             vec![game("Home", "Away")],
             GameTime::new(12, 0).unwrap(),
             GameTime::new(13, 30).unwrap(),
+            vec![],
             1,
             output_dir.to_string_lossy().to_string(),
             "en",
@@ -403,6 +617,7 @@ mod tests {
             vec![game("Other Home", "Other Away")],
             GameTime::new(12, 0).unwrap(),
             GameTime::new(13, 30).unwrap(),
+            vec![],
             1,
             output_dir.to_string_lossy().to_string(),
             "en",
@@ -423,6 +638,7 @@ mod tests {
             vec![game("Third Home", "Third Away")],
             GameTime::new(12, 0).unwrap(),
             GameTime::new(13, 30).unwrap(),
+            vec![],
             1,
             output_dir.to_string_lossy().to_string(),
             "en",

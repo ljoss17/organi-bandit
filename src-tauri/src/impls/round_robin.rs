@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::errors::AppError;
 use crate::traits::tournament::Tournament;
+use crate::types::configurations::time::TimeConfiguration;
 use crate::types::game::Game;
 use crate::types::game_time::GameTime;
 use crate::types::season::SeasonConfig;
@@ -27,6 +28,7 @@ impl Tournament for RoundRobin {
         teams: &[Team],
         season_config: &SeasonConfig,
     ) -> Result<(), AppError> {
+        let time_configuration = season_config.time_configuration();
         if season_config.number_fields() < 1 {
             return Err(AppError::InvalidNumberOfFields(
                 season_config.number_fields(),
@@ -37,7 +39,7 @@ impl Tournament for RoundRobin {
         // time, so the schedule could never advance. The gap after a game
         // may legitimately be zero (back-to-back kickoffs), the game itself
         // cannot.
-        if season_config.game_duration() == &GameTime::new(0, 0)? {
+        if time_configuration.game_duration() == &GameTime::new(0, 0)? {
             return Err(AppError::ZeroGameDuration);
         }
 
@@ -65,8 +67,8 @@ impl Tournament for RoundRobin {
         // constraint is whichever side has less room, not the day's total
         // capacity (a config where both sides combined have enough slots
         // but one side alone doesn't must still be rejected).
-        let slots_before_break = self.available_slots_before_break(season_config);
-        let slots_after_break = self.available_slots_after_break(season_config);
+        let slots_before_break = self.available_slots_before_break(time_configuration);
+        let slots_after_break = self.available_slots_after_break(time_configuration);
         let available_slots = slots_before_break.min(slots_after_break);
         if slots_per_leg > available_slots {
             return Err(AppError::InsufficientDailyCapacity(
@@ -87,21 +89,20 @@ impl Tournament for RoundRobin {
     ) -> Result<Vec<Game>, AppError> {
         // Validate parameters
         self.validate_parameters(teams, season_config)?;
-
         let mut maybe_schedule = None;
         'outer: for _ in 0..100 {
             let pass_a = self.generate_single_game_schedule(
                 teams,
                 start_date,
                 season_config,
-                season_config.start_time(),
+                season_config.time_configuration().start_time(),
             )?;
             for _ in 0..100 {
                 let pass_b = self.generate_single_game_schedule(
                     teams,
                     start_date,
                     season_config,
-                    season_config.end_break(),
+                    season_config.time_configuration().end_break(),
                 )?;
                 if let Some(schedule) = self.merge_schedules(pass_a.clone(), pass_b) {
                     maybe_schedule = Some(schedule);
@@ -290,16 +291,9 @@ impl RoundRobin {
     // break, using a probe scheduler with 1 field since this counts
     // distinct TIME VALUES only; field capacity is factored in separately
     // by the caller.
-    fn available_slots_before_break(&self, season_config: &SeasonConfig) -> u32 {
-        let interval = season_config.interval_between_games();
-        let mut probe = GameTimeScheduler::new(
-            season_config.start_time(),
-            &interval,
-            season_config.game_duration(),
-            1,
-            season_config.start_break(),
-            season_config.end_break(),
-        );
+    fn available_slots_before_break(&self, time_configuration: &TimeConfiguration) -> u32 {
+        let mut probe =
+            GameTimeScheduler::new(time_configuration, time_configuration.start_time(), 1);
 
         let mut slots = 0u32;
         // Defensive iteration cap. validate_parameters rejects a zero game
@@ -310,8 +304,8 @@ impl RoundRobin {
         for _ in 0..(24 * 60) {
             // A slot only counts if the game played in it finishes before
             // the break starts
-            let game_ends = *probe.current_time() + *season_config.game_duration();
-            if probe.is_past_hard_stop() || game_ends > *season_config.start_break() {
+            let game_ends = *probe.current_time() + *time_configuration.game_duration();
+            if probe.is_past_hard_stop() || game_ends > *time_configuration.start_break() {
                 break;
             }
             slots += 1;
@@ -326,16 +320,9 @@ impl RoundRobin {
     // at end_break rather than at the season's start_time, since a leg
     // placed after the break always begins there, independent of how much
     // room the pre-break leg actually used.
-    fn available_slots_after_break(&self, season_config: &SeasonConfig) -> u32 {
-        let interval = season_config.interval_between_games();
-        let mut probe = GameTimeScheduler::new(
-            season_config.end_break(),
-            &interval,
-            season_config.game_duration(),
-            1,
-            season_config.start_break(),
-            season_config.end_break(),
-        );
+    fn available_slots_after_break(&self, time_configuration: &TimeConfiguration) -> u32 {
+        let mut probe =
+            GameTimeScheduler::new(time_configuration, time_configuration.end_break(), 1);
 
         let mut slots = 0u32;
         for _ in 0..(24 * 60) {
@@ -367,6 +354,7 @@ impl RoundRobin {
         season_config: &SeasonConfig,
         leg_start_time: &GameTime,
     ) -> Result<Vec<Game>, AppError> {
+        let time_configuration = season_config.time_configuration();
         let mut rng = rand::rng();
         let mut inner_teams = teams.to_vec();
         if !inner_teams.len().is_multiple_of(2) {
@@ -377,15 +365,15 @@ impl RoundRobin {
 
         let mut schedule = Vec::with_capacity((number_teams - 1) * (number_teams / 2));
 
-        let mut game_day_scheduler = GameDayScheduler::new(start_date, season_config.game_days())?;
-        let interval = season_config.interval_between_games();
+        let mut game_day_scheduler = GameDayScheduler::new(
+            start_date,
+            season_config.date_configuration().game_days(),
+            season_config.date_configuration().excluded_dates(),
+        )?;
         let mut game_time_scheduler = GameTimeScheduler::new(
+            time_configuration,
             leg_start_time,
-            &interval,
-            season_config.game_duration(),
             season_config.number_fields(),
-            season_config.start_break(),
-            season_config.end_break(),
         );
 
         for _ in 0..number_teams - 1 {
@@ -402,7 +390,7 @@ impl RoundRobin {
                 // advance happened to tick past hard_stop with nothing left
                 // that actually needed the room.
                 if !is_bye {
-                    game_day_scheduler.advance_if_past_hard_stop(&mut game_time_scheduler);
+                    game_day_scheduler.advance_if_past_hard_stop(&mut game_time_scheduler)?;
                 }
                 let game_day = *game_day_scheduler.current_day();
                 let game_time = *game_time_scheduler.current_time();
@@ -414,7 +402,7 @@ impl RoundRobin {
                 }
             }
 
-            game_day_scheduler.advance();
+            game_day_scheduler.advance()?;
             Self::rotate_teams(&mut inner_teams);
         }
 
@@ -556,6 +544,8 @@ mod tests {
     use super::*;
     use chrono::{Datelike, NaiveDate, Weekday};
 
+    use crate::types::configurations::date::DateConfiguration;
+    use crate::types::configurations::time::TimeConfiguration;
     use crate::types::game_time::GameTime;
 
     fn start_date() -> NaiveDate {
@@ -570,16 +560,15 @@ mod tests {
 
     #[test]
     fn test_round_robin_parameter_validation_1() {
-        let season_config = SeasonConfig::new(
-            start_date(),
+        let time_configuration = TimeConfiguration::new(
             GameTime::new(9, 0).unwrap(),
             GameTime::new(12, 0).unwrap(),
             GameTime::new(13, 30).unwrap(),
             GameTime::new(1, 0).unwrap(),
             GameTime::new(0, 30).unwrap(),
-            1,
-            vec![Weekday::Sat],
         );
+        let date_configuration = DateConfiguration::new(start_date(), vec![Weekday::Sat], vec![]);
+        let season_config = SeasonConfig::new(time_configuration, date_configuration, 1);
         let round_robin = RoundRobin;
 
         let result = round_robin.validate_parameters(&many_teams(5), &season_config);
@@ -590,16 +579,15 @@ mod tests {
     // Test case: fewer than 2 teams is rejected.
     #[test]
     fn compute_schedule_rejects_fewer_than_two_teams() {
-        let season_config = SeasonConfig::new(
-            start_date(),
+        let time_configuration = TimeConfiguration::new(
             GameTime::new(9, 0).unwrap(),
             GameTime::new(12, 0).unwrap(),
             GameTime::new(13, 30).unwrap(),
             GameTime::new(1, 0).unwrap(),
             GameTime::new(0, 30).unwrap(),
-            1,
-            vec![Weekday::Sat],
         );
+        let date_configuration = DateConfiguration::new(start_date(), vec![Weekday::Sat], vec![]);
+        let season_config = SeasonConfig::new(time_configuration, date_configuration, 1);
 
         let result =
             RoundRobin.compute_schedule(&many_teams(1), &start_date(), &season_config, false);
@@ -610,16 +598,15 @@ mod tests {
     // Test case: zero fields is rejected.
     #[test]
     fn compute_schedule_rejects_zero_fields() {
-        let season_config = SeasonConfig::new(
-            start_date(),
+        let time_configuration = TimeConfiguration::new(
             GameTime::new(9, 0).unwrap(),
             GameTime::new(12, 0).unwrap(),
             GameTime::new(13, 30).unwrap(),
             GameTime::new(1, 0).unwrap(),
             GameTime::new(0, 30).unwrap(),
-            0,
-            vec![Weekday::Sat],
         );
+        let date_configuration = DateConfiguration::new(start_date(), vec![Weekday::Sat], vec![]);
+        let season_config = SeasonConfig::new(time_configuration, date_configuration, 0);
 
         let result =
             RoundRobin.compute_schedule(&many_teams(5), &start_date(), &season_config, false);
@@ -631,16 +618,15 @@ mod tests {
     // start at the same moment and the schedule could never advance.
     #[test]
     fn compute_schedule_rejects_zero_game_duration() {
-        let season_config = SeasonConfig::new(
-            start_date(),
+        let time_configuration = TimeConfiguration::new(
             GameTime::new(9, 0).unwrap(),
             GameTime::new(12, 0).unwrap(),
             GameTime::new(13, 30).unwrap(),
             GameTime::new(0, 0).unwrap(),
             GameTime::new(0, 30).unwrap(),
-            2,
-            vec![Weekday::Sat],
         );
+        let date_configuration = DateConfiguration::new(start_date(), vec![Weekday::Sat], vec![]);
+        let season_config = SeasonConfig::new(time_configuration, date_configuration, 2);
 
         let result =
             RoundRobin.compute_schedule(&many_teams(6), &start_date(), &season_config, false);
@@ -653,16 +639,15 @@ mod tests {
     #[test]
     fn compute_schedule_accepts_zero_time_between_games() {
         let teams = many_teams(6);
-        let season_config = SeasonConfig::new(
-            start_date(),
+        let time_configuration = TimeConfiguration::new(
             GameTime::new(9, 0).unwrap(),
             GameTime::new(12, 0).unwrap(),
             GameTime::new(13, 0).unwrap(),
             GameTime::new(1, 0).unwrap(),
             GameTime::new(0, 0).unwrap(),
-            1,
-            vec![Weekday::Sat],
         );
+        let date_configuration = DateConfiguration::new(start_date(), vec![Weekday::Sat], vec![]);
+        let season_config = SeasonConfig::new(time_configuration, date_configuration, 1);
 
         let schedule = RoundRobin
             .compute_schedule(&teams, &start_date(), &season_config, false)
@@ -679,16 +664,15 @@ mod tests {
     #[test]
     fn compute_schedule_rejects_insufficient_daily_capacity() {
         let teams = many_teams(8);
-        let season_config = SeasonConfig::new(
-            start_date(),
+        let time_configuration = TimeConfiguration::new(
             GameTime::new(9, 0).unwrap(),
             GameTime::new(12, 0).unwrap(),
             GameTime::new(13, 0).unwrap(),
             GameTime::new(0, 45).unwrap(),
             GameTime::new(0, 15).unwrap(),
-            1,
-            vec![Weekday::Sat],
         );
+        let date_configuration = DateConfiguration::new(start_date(), vec![Weekday::Sat], vec![]);
+        let season_config = SeasonConfig::new(time_configuration, date_configuration, 1);
 
         let result = RoundRobin.compute_schedule(&teams, &start_date(), &season_config, false);
 
@@ -705,16 +689,15 @@ mod tests {
     #[test]
     fn compute_schedule_rejects_when_no_eligible_referees_remain() {
         let teams = many_teams(4);
-        let season_config = SeasonConfig::new(
-            start_date(),
+        let time_configuration = TimeConfiguration::new(
             GameTime::new(9, 0).unwrap(),
             GameTime::new(12, 0).unwrap(),
             GameTime::new(13, 30).unwrap(),
             GameTime::new(1, 0).unwrap(),
             GameTime::new(0, 30).unwrap(),
-            2,
-            vec![Weekday::Sat],
         );
+        let date_configuration = DateConfiguration::new(start_date(), vec![Weekday::Sat], vec![]);
+        let season_config = SeasonConfig::new(time_configuration, date_configuration, 2);
 
         let result = RoundRobin.compute_schedule(&teams, &start_date(), &season_config, true);
 
@@ -726,16 +709,15 @@ mod tests {
     #[test]
     fn test_smallest_valid_team_count() {
         let teams = many_teams(4);
-        let season_config = SeasonConfig::new(
-            start_date(),
+        let time_configuration = TimeConfiguration::new(
             GameTime::new(9, 0).unwrap(),
             GameTime::new(12, 0).unwrap(),
             GameTime::new(13, 30).unwrap(),
             GameTime::new(1, 0).unwrap(),
             GameTime::new(0, 30).unwrap(),
-            1,
-            vec![Weekday::Sat],
         );
+        let date_configuration = DateConfiguration::new(start_date(), vec![Weekday::Sat], vec![]);
+        let season_config = SeasonConfig::new(time_configuration, date_configuration, 1);
 
         let schedule = RoundRobin
             .compute_schedule(&teams, &start_date(), &season_config, false)
@@ -752,16 +734,16 @@ mod tests {
     #[test]
     fn compute_schedule_rejects_infeasible_five_teams() {
         let teams = many_teams(5);
-        let season_config = SeasonConfig::new(
-            start_date(),
+        let time_configuration = TimeConfiguration::new(
             GameTime::new(9, 0).unwrap(),
             GameTime::new(12, 0).unwrap(),
             GameTime::new(13, 30).unwrap(),
             GameTime::new(1, 0).unwrap(),
             GameTime::new(0, 30).unwrap(),
-            2,
-            vec![Weekday::Wed, Weekday::Sat],
         );
+        let date_configuration =
+            DateConfiguration::new(start_date(), vec![Weekday::Wed, Weekday::Sat], vec![]);
+        let season_config = SeasonConfig::new(time_configuration, date_configuration, 2);
 
         let result = RoundRobin.compute_schedule(&teams, &start_date(), &season_config, false);
 
@@ -775,16 +757,16 @@ mod tests {
     #[test]
     fn test_even_team_count() {
         let teams = many_teams(6);
-        let season_config = SeasonConfig::new(
-            start_date(),
+        let time_configuration = TimeConfiguration::new(
             GameTime::new(9, 0).unwrap(),
             GameTime::new(12, 0).unwrap(),
             GameTime::new(13, 30).unwrap(),
             GameTime::new(1, 0).unwrap(),
             GameTime::new(0, 30).unwrap(),
-            3,
-            vec![Weekday::Wed, Weekday::Sat],
         );
+        let date_configuration =
+            DateConfiguration::new(start_date(), vec![Weekday::Wed, Weekday::Sat], vec![]);
+        let season_config = SeasonConfig::new(time_configuration, date_configuration, 3);
 
         let schedule = RoundRobin
             .compute_schedule(&teams, &start_date(), &season_config, false)
@@ -800,16 +782,15 @@ mod tests {
     #[test]
     fn test_referees_requested() {
         let teams = many_teams(9);
-        let season_config = SeasonConfig::new(
-            start_date(),
+        let time_configuration = TimeConfiguration::new(
             GameTime::new(9, 0).unwrap(),
             GameTime::new(13, 0).unwrap(),
             GameTime::new(13, 30).unwrap(),
             GameTime::new(1, 30).unwrap(),
             GameTime::new(0, 30).unwrap(),
-            2,
-            vec![Weekday::Sat],
         );
+        let date_configuration = DateConfiguration::new(start_date(), vec![Weekday::Sat], vec![]);
+        let season_config = SeasonConfig::new(time_configuration, date_configuration, 2);
 
         let schedule = RoundRobin
             .compute_schedule(&teams, &start_date(), &season_config, true)
@@ -823,16 +804,16 @@ mod tests {
     #[test]
     fn test_single_field() {
         let teams = many_teams(8);
-        let season_config = SeasonConfig::new(
-            start_date(),
+        let time_configuration = TimeConfiguration::new(
             GameTime::new(9, 0).unwrap(),
             GameTime::new(13, 0).unwrap(),
             GameTime::new(13, 15).unwrap(),
             GameTime::new(0, 45).unwrap(),
             GameTime::new(0, 15).unwrap(),
-            1,
-            vec![Weekday::Wed, Weekday::Sat],
         );
+        let date_configuration =
+            DateConfiguration::new(start_date(), vec![Weekday::Wed, Weekday::Sat], vec![]);
+        let season_config = SeasonConfig::new(time_configuration, date_configuration, 1);
 
         let schedule = RoundRobin
             .compute_schedule(&teams, &start_date(), &season_config, false)
@@ -845,16 +826,15 @@ mod tests {
     #[test]
     fn test_two_fields() {
         let teams = many_teams(8);
-        let season_config = SeasonConfig::new(
-            start_date(),
+        let time_configuration = TimeConfiguration::new(
             GameTime::new(9, 0).unwrap(),
             GameTime::new(12, 30).unwrap(),
             GameTime::new(13, 0).unwrap(),
             GameTime::new(1, 0).unwrap(),
             GameTime::new(0, 30).unwrap(),
-            2,
-            vec![Weekday::Sat],
         );
+        let date_configuration = DateConfiguration::new(start_date(), vec![Weekday::Sat], vec![]);
+        let season_config = SeasonConfig::new(time_configuration, date_configuration, 2);
 
         let schedule = RoundRobin
             .compute_schedule(&teams, &start_date(), &season_config, false)
@@ -868,16 +848,19 @@ mod tests {
     #[test]
     fn test_multiple_game_days() {
         let teams = many_teams(7);
-        let season_config = SeasonConfig::new(
-            start_date(),
+        let time_configuration = TimeConfiguration::new(
             GameTime::new(9, 0).unwrap(),
             GameTime::new(12, 30).unwrap(),
             GameTime::new(13, 0).unwrap(),
             GameTime::new(1, 0).unwrap(),
             GameTime::new(0, 30).unwrap(),
-            2,
-            vec![Weekday::Wed, Weekday::Sat, Weekday::Sun],
         );
+        let date_configuration = DateConfiguration::new(
+            start_date(),
+            vec![Weekday::Wed, Weekday::Sat, Weekday::Sun],
+            vec![],
+        );
+        let season_config = SeasonConfig::new(time_configuration, date_configuration, 2);
 
         let schedule = RoundRobin
             .compute_schedule(&teams, &start_date(), &season_config, false)
@@ -902,23 +885,22 @@ mod tests {
     #[test]
     fn no_game_runs_past_the_start_of_the_break() {
         let teams = many_teams(4);
-        let season_config = SeasonConfig::new(
-            start_date(),
+        let time_configuration = TimeConfiguration::new(
             GameTime::new(9, 30).unwrap(),
             GameTime::new(12, 0).unwrap(),
             GameTime::new(13, 0).unwrap(),
             GameTime::new(0, 45).unwrap(),
             GameTime::new(0, 15).unwrap(),
-            1,
-            vec![Weekday::Sat],
         );
+        let date_configuration = DateConfiguration::new(start_date(), vec![Weekday::Sat], vec![]);
+        let season_config = SeasonConfig::new(time_configuration.clone(), date_configuration, 1);
 
         let schedule = RoundRobin
             .compute_schedule(&teams, &start_date(), &season_config, false)
             .unwrap();
 
-        let duration = *season_config.game_duration();
-        let start_break = *season_config.start_break();
+        let duration = *time_configuration.game_duration();
+        let start_break = *time_configuration.start_break();
         for game in schedule.iter().filter(|game| !is_bye_game(game)) {
             let kickoff = game
                 .get_game_time()
@@ -940,16 +922,15 @@ mod tests {
     #[test]
     fn compute_schedule_rejects_a_slot_whose_game_would_overrun_the_break() {
         let teams = many_teams(6);
-        let season_config = SeasonConfig::new(
-            start_date(),
+        let time_configuration = TimeConfiguration::new(
             GameTime::new(9, 30).unwrap(),
             GameTime::new(12, 0).unwrap(),
             GameTime::new(13, 0).unwrap(),
             GameTime::new(0, 45).unwrap(),
             GameTime::new(0, 15).unwrap(),
-            1,
-            vec![Weekday::Sat],
         );
+        let date_configuration = DateConfiguration::new(start_date(), vec![Weekday::Sat], vec![]);
+        let season_config = SeasonConfig::new(time_configuration, date_configuration, 1);
 
         let result = RoundRobin.compute_schedule(&teams, &start_date(), &season_config, false);
 
@@ -966,6 +947,7 @@ mod tests {
         season_config: &SeasonConfig,
         with_referees: bool,
     ) {
+        let time_configuration = season_config.time_configuration();
         let is_odd = !teams.len().is_multiple_of(2);
 
         let input_names: HashSet<&str> = teams.iter().map(Team::get_name).collect();
@@ -1036,7 +1018,10 @@ mod tests {
 
             // Games only fall on the configured days of the week.
             assert!(
-                season_config.game_days().contains(&game_day.weekday()),
+                season_config
+                    .date_configuration()
+                    .game_days()
+                    .contains(&game_day.weekday()),
                 "game on {day} falls on a day of the week not in the configured game days"
             );
 
@@ -1064,8 +1049,8 @@ mod tests {
 
                 // No game is scheduled inside the configured break window.
                 assert!(
-                    !(game_time > *season_config.start_break()
-                        && game_time < *season_config.end_break()),
+                    !(game_time > *time_configuration.start_break()
+                        && game_time < *time_configuration.end_break()),
                     "game at {game_time} on {day} falls inside the break window"
                 );
 
@@ -1156,7 +1141,7 @@ mod tests {
             sorted_times.sort();
             for pair in sorted_times.windows(2) {
                 assert!(
-                    pair[0] + season_config.interval_between_games() <= pair[1],
+                    pair[0] + time_configuration.interval_between_games() <= pair[1],
                     "games on {day} at {} and {} are closer together than the configured spacing",
                     pair[0],
                     pair[1]
@@ -1177,7 +1162,8 @@ mod tests {
             );
             times.sort();
             assert!(
-                times[0] < *season_config.start_break() && times[1] >= *season_config.end_break(),
+                times[0] < *time_configuration.start_break()
+                    && times[1] >= *time_configuration.end_break(),
                 "team {team}'s games on {day} at {} and {} aren't separated by the break window",
                 times[0],
                 times[1]

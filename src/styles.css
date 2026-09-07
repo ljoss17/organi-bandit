@@ -152,16 +152,30 @@
   font-weight: 500;
 }
 
-.game-days {
+.game-days,
+.excluded-dates {
   margin-top: 1.5em;
   border: 1px solid #d9d9d9;
   border-radius: 8px;
   padding: 0.8em 1em;
 }
 
-.game-days legend {
+.game-days legend,
+.excluded-dates legend {
   padding: 0 0.4em;
   font-weight: 500;
+}
+
+.excluded-date-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4em;
+  margin-bottom: 0.4em;
+}
+
+.excluded-date-row button {
+  padding: 0.3em 0.7em;
 }
 
 .day-options {
