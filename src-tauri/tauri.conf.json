@@ -33,6 +33,11 @@
     "resources": {
       "resources/teams.json": "resources/teams.json",
       "resources/CHANGELOG.md": "CHANGELOG.md"
+    },
+    "windows": {
+      "nsis": {
+        "installMode": "both"
+      }
     }
   },
   "plugins": {
