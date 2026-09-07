@@ -310,6 +310,70 @@ function readGameTime(fieldPrefix) {
   };
 }
 
+// Formats from the local date parts rather than via toISOString(), which
+// converts to UTC first and would shift the date a day earlier for any
+// timezone ahead of it.
+function toIsoDate(date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+// One row covers a single date, or a run of consecutive dates when an end
+// date is given.
+function addExcludedDateRow() {
+  const row = document.createElement("div");
+  row.className = "excluded-date-row";
+
+  const from = document.createElement("input");
+  from.type = "date";
+  from.className = "excluded-date-from";
+
+  const separator = document.createElement("span");
+  separator.setAttribute("data-i18n", "excluded-date-to");
+  separator.textContent = t("excluded-date-to");
+
+  const to = document.createElement("input");
+  to.type = "date";
+  to.className = "excluded-date-to";
+
+  const removeButton = document.createElement("button");
+  removeButton.type = "button";
+  removeButton.textContent = "-";
+  removeButton.addEventListener("click", () => row.remove());
+
+  row.append(from, separator, to, removeButton);
+  document.getElementById("excluded-dates-list").appendChild(row);
+}
+
+document.getElementById("add-excluded-date").addEventListener("click", addExcludedDateRow);
+
+// Expands every row into the flat list of individual dates the backend
+// expects, dropping empty rows and de-duplicating overlapping ranges.
+// Throws when a range ends before it starts, so the caller can surface it.
+function collectExcludedDates() {
+  const dates = new Set();
+
+  for (const row of document.querySelectorAll(".excluded-date-row")) {
+    const from = row.querySelector(".excluded-date-from").value;
+    if (!from) {
+      continue;
+    }
+    const to = row.querySelector(".excluded-date-to").value || from;
+    if (to < from) {
+      throw new Error(t("excluded-dates-invalid-range"));
+    }
+
+    const last = new Date(`${to}T00:00:00`);
+    for (let day = new Date(`${from}T00:00:00`); day <= last; day.setDate(day.getDate() + 1)) {
+      dates.add(toIsoDate(day));
+    }
+  }
+
+  return [...dates].sort();
+}
+
 function collectSeasonInput() {
   const startDate = document.getElementById("start-date").value;
   const numberFields = Number(document.getElementById("number-fields").value);
@@ -331,11 +395,27 @@ function collectSeasonInput() {
     startBreak,
     endBreak,
     gameDays,
+    excludedDates: collectExcludedDates(),
     teams,
   };
 }
 
 document.getElementById("generate-schedule").addEventListener("click", async () => {
+  const statusMessage = document.getElementById("status-message");
+  statusMessage.textContent = "";
+  statusMessage.classList.remove("success", "error");
+
+  // Collecting the excluded dates validates them, so report a bad range
+  // here rather than letting it reach the backend.
+  let seasonInput;
+  try {
+    seasonInput = collectSeasonInput();
+  } catch (error) {
+    statusMessage.textContent = error.message;
+    statusMessage.classList.add("error");
+    return;
+  }
+
   const {
     startDate,
     numberFields,
@@ -345,11 +425,9 @@ document.getElementById("generate-schedule").addEventListener("click", async () 
     startBreak,
     endBreak,
     gameDays,
+    excludedDates,
     teams,
-  } = collectSeasonInput();
-  const statusMessage = document.getElementById("status-message");
-  statusMessage.textContent = "";
-  statusMessage.classList.remove("success", "error");
+  } = seasonInput;
 
   if (!outputDirectoryPath) {
     statusMessage.textContent = "Please select an output folder before generating.";
@@ -369,6 +447,7 @@ document.getElementById("generate-schedule").addEventListener("click", async () 
         timeBetweenGames,
         numberFields,
         gameDays,
+        excludedDates,
       },
     });
     console.log(schedule);
