@@ -43,27 +43,57 @@ async function loadTranslations(language) {
     currentTranslations = await response.json();
     currentLanguage = language;
     applyTranslations(currentTranslations);
+    renderUpdateStatus();
     document.getElementById("language-select").value = currentLanguage;
   } catch (error) {
     console.error(`Failed to load translations for "${language}":`, error);
   }
 }
 
-loadTranslations(currentLanguage);
+// Kept as the message key rather than the rendered text, so that switching
+// language re-translates whatever the updater last reported.
+let updateStatus = null;
+
+function renderUpdateStatus() {
+  const element = document.getElementById("update-status");
+  if (updateStatus === null) {
+    element.hidden = true;
+    element.textContent = "";
+    element.classList.remove("error");
+    return;
+  }
+
+  const message = t(updateStatus.key);
+  element.textContent = updateStatus.detail ? `${message} ${updateStatus.detail}` : message;
+  element.classList.toggle("error", updateStatus.isError);
+  element.hidden = false;
+}
+
+function setUpdateStatus(key, { detail = null, isError = false } = {}) {
+  updateStatus = { key, detail, isError };
+  renderUpdateStatus();
+}
 
 async function checkForUpdate() {
   try {
     const update = await window.__TAURI__.updater.check();
-    if (update) {
-      await update.downloadAndInstall();
-      await window.__TAURI__.process.relaunch();
+    if (!update) {
+      return;
     }
+    setUpdateStatus("update-downloading");
+    await update.downloadAndInstall();
+    await window.__TAURI__.process.relaunch();
   } catch (error) {
+    // Release builds have no reachable devtools console, so the reason an
+    // update never happened has to be visible in the window itself.
     console.error("Failed to check for update:", error);
+    setUpdateStatus("update-failed", { detail: String(error), isError: true });
   }
 }
 
-checkForUpdate();
+// Waits for the translations so that a failure reported before they land
+// doesn't render as a bare message key.
+loadTranslations(currentLanguage).then(checkForUpdate);
 
 function parseChangelog(markdown) {
   const versions = [];
