@@ -12,10 +12,13 @@ A desktop application that generates a flag football season schedule as a spread
 - **Season configuration**, set through the desktop UI:
   - Start date and which weekdays count as game days
   - Number of fields (how many games can run at the same time)
-  - Start time, time between games, and a start/end break window (e.g. a lunch break with no games scheduled)
+  - Start time, game duration, and the time between games — the length of a game and the rest left after it are set separately, so either can be adjusted without changing the other
+  - A start/end break window (e.g. a lunch break with no games scheduled), which games never run into
+  - Dates to exclude, individually or as a range of consecutive days (holidays, unavailable fields), which the scheduler skips
+  - An optional "single game per week", for clubs that play once a week but want to decide later which of the selected weekdays it falls on
 - **Round-robin group stage** — every team plays every other team twice (once as home, once as away), with a bye week for one team per round when the team count is odd, and a referee automatically assigned to each game from the teams not already playing that time slot.
 - **Single-elimination playoffs** — the top 8 teams from the group stage advance to a knockout bracket.
-- **Excel export** — the full schedule (group stage and playoffs) is written to a `.xlsx` file in a folder you choose.
+- **Excel export** — the full schedule (group stage and playoffs) is written to a `.xlsx` file in a folder you choose. Any excluded dates are listed alongside it, with consecutive ones shown as a single range, and with "single game per week" each week's day cell becomes a dropdown of that week's eligible days so the choice can be made in the spreadsheet.
 - **English and French UI**, switchable at runtime — the exported spreadsheet's own labels (column headers, day titles) follow whichever language is selected.
 
 ## Tech stack

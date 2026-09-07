@@ -2,7 +2,11 @@
 name = "Organi-Bandit"
 directory = "changelog.d"
 filename = "CHANGELOG.md"
-issue_format = "#{issue}"
+issue_format = "[#{issue}](https://github.com/ljoss17/organi-bandit/issues/{issue})"
+# Keep-a-Changelog headings, which the in-app "What's new" viewer parses:
+# it looks for "## [version] - date" with "### Category" beneath, and skips
+# anything it doesn't recognise. Category level follows the title's.
+title_format = "## [{version}] - {project_date}"
 
 [[tool.towncrier.type]]
 directory = "feature"

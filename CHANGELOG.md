@@ -8,6 +8,23 @@ Unreleased changes are tracked as fragments in [`changelog.d/`](changelog.d/READ
 
 <!-- towncrier release notes start -->
 
+## [0.2.0] - 2026-09-07
+
+### Added
+
+- The generated spreadsheet now shows a break row between games scheduled before and after the season's break window. ([#1](https://github.com/ljoss17/organi-bandit/issues/1))
+- Specific dates can now be excluded from the season, so the scheduler skips them when placing games. The generated spreadsheet lists them alongside the schedule, with consecutive dates shown as a single range. ([#3](https://github.com/ljoss17/organi-bandit/issues/3))
+- A season can now be limited to one game a week even when several game days are selected. The day is then left open: each week's date cell in the generated spreadsheet becomes a dropdown of that week's eligible days, so it can be picked there. ([#5](https://github.com/ljoss17/organi-bandit/issues/5))
+
+### Fixed
+
+- Round Robin schedules no longer place a team in two back-to-back games. Its two games each day are now always separated by the season's break. ([#2](https://github.com/ljoss17/organi-bandit/issues/2))
+
+### Changed
+
+- Game duration is now configured separately from the time between games, so how long a game lasts and how much rest teams get between games can be adjusted independently. ([#4](https://github.com/ljoss17/organi-bandit/issues/4))
+
+
 ## [0.1.0] - 2026-08-28
 
 ### Added
