@@ -455,6 +455,7 @@ document.getElementById("generate-schedule").addEventListener("click", async () 
       schedule,
       startBreak,
       endBreak,
+      excludedDates,
       numberFields,
       outputDirectoryPath,
       language: currentLanguage,

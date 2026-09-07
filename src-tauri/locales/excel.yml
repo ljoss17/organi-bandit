@@ -23,3 +23,6 @@ referee:
 break_row:
   en: "Break from %{start_break} to %{end_break}"
   fr: "Pause de %{start_break} à %{end_break}"
+excluded_dates:
+  en: "Excluded dates"
+  fr: "Dates exclues"
