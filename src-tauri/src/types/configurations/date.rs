@@ -7,6 +7,8 @@ pub struct DateConfiguration {
     start_date: NaiveDate,
     game_days: Vec<Weekday>,
     excluded_dates: Vec<NaiveDate>,
+    #[serde(default)]
+    single_game_per_week: bool,
 }
 
 impl DateConfiguration {
@@ -14,11 +16,13 @@ impl DateConfiguration {
         start_date: NaiveDate,
         game_days: Vec<Weekday>,
         excluded_dates: Vec<NaiveDate>,
+        single_game_per_week: bool,
     ) -> Self {
         Self {
             start_date,
             game_days,
             excluded_dates,
+            single_game_per_week,
         }
     }
 
@@ -33,6 +37,10 @@ impl DateConfiguration {
     pub fn excluded_dates(&self) -> &[NaiveDate] {
         &self.excluded_dates
     }
+
+    pub fn single_game_per_week(&self) -> bool {
+        self.single_game_per_week
+    }
 }
 
 #[cfg(test)]
@@ -44,7 +52,8 @@ mod tests {
         let payload = r#"{
             "startDate": "2026-05-13",
             "gameDays": ["Wed", "Sat"],
-            "excludedDates": ["2026-05-16", "2026-07-04"]
+            "excludedDates": ["2026-05-16", "2026-07-04"],
+            "singleGamePerWeek": true
         }"#;
 
         let configuration: DateConfiguration =
@@ -62,6 +71,21 @@ mod tests {
                 NaiveDate::from_ymd_opt(2026, 7, 4).unwrap(),
             ]
         );
+        assert!(configuration.single_game_per_week());
+    }
+
+    #[test]
+    fn defaults_to_every_game_day_when_the_toggle_is_absent() {
+        let payload = r#"{
+            "startDate": "2026-05-13",
+            "gameDays": ["Sat", "Sun"],
+            "excludedDates": []
+        }"#;
+
+        let configuration: DateConfiguration =
+            serde_json::from_str(payload).expect("payload without the toggle should deserialize");
+
+        assert!(!configuration.single_game_per_week());
     }
 
     #[test]
@@ -84,11 +108,17 @@ mod tests {
             NaiveDate::from_ymd_opt(2026, 5, 13).unwrap(),
             vec![Weekday::Sat],
             vec![NaiveDate::from_ymd_opt(2026, 5, 16).unwrap()],
+            false,
         );
 
         let json = serde_json::to_string(&configuration).expect("serialization should succeed");
 
-        for key in ["startDate", "gameDays", "excludedDates"] {
+        for key in [
+            "startDate",
+            "gameDays",
+            "excludedDates",
+            "singleGamePerWeek",
+        ] {
             assert!(json.contains(key), "expected key {key} in {json}");
         }
         // The values round-trip in the same shapes the frontend sends.

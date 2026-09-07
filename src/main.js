@@ -385,6 +385,7 @@ function collectSeasonInput() {
   const gameDays = Array.from(document.querySelectorAll('input[name="game-days"]:checked')).map(
     (checkbox) => checkbox.value,
   );
+  const singleGamePerWeek = document.getElementById("single-game-per-week").checked;
 
   return {
     startDate,
@@ -396,6 +397,7 @@ function collectSeasonInput() {
     endBreak,
     gameDays,
     excludedDates: collectExcludedDates(),
+    singleGamePerWeek,
     teams,
   };
 }
@@ -426,6 +428,7 @@ document.getElementById("generate-schedule").addEventListener("click", async () 
     endBreak,
     gameDays,
     excludedDates,
+    singleGamePerWeek,
     teams,
   } = seasonInput;
 
@@ -448,6 +451,7 @@ document.getElementById("generate-schedule").addEventListener("click", async () 
         numberFields,
         gameDays,
         excludedDates,
+        singleGamePerWeek,
       },
     });
     console.log(schedule);
@@ -455,7 +459,12 @@ document.getElementById("generate-schedule").addEventListener("click", async () 
       schedule,
       startBreak,
       endBreak,
-      excludedDates,
+      dateConfiguration: {
+        startDate,
+        gameDays,
+        excludedDates,
+        singleGamePerWeek,
+      },
       numberFields,
       outputDirectoryPath,
       language: currentLanguage,

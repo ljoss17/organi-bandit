@@ -1,4 +1,5 @@
 {
+    "add-excluded-date": "Ajouter des dates exclues",
     "browse-output-folder": "Parcourir...",
     "browse-teams": "Parcourir le fichier d'équipes...",
     "cancel": "Annuler",
@@ -13,7 +14,6 @@
     "day-tuesday": "Mardi",
     "day-wednesday": "Mercredi",
     "edit": "Éditer",
-    "add-excluded-date": "Ajouter des dates exclues",
     "end-break": "Fin de la pause",
     "excluded-date-to": "à",
     "excluded-dates": "Dates exclues",
@@ -27,6 +27,7 @@
     "output-folder": "Dossier de sortie",
     "output-folder-placeholder": "Sélectionner un dossier...",
     "save": "Sauvegarder",
+    "single-game-per-week": "Un seul match par semaine",
     "start-break": "Début de la pause",
     "start-date": "Date de début",
     "start-time": "Heure de début",

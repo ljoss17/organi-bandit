@@ -87,8 +87,7 @@ where
 
         let mut game_day_scheduler = GameDayScheduler::new(
             &last_group_stage_day,
-            self.season_config().date_configuration().game_days(),
-            self.season_config().date_configuration().excluded_dates(),
+            self.season_config.date_configuration(),
         )?;
         game_day_scheduler.advance()?;
 
@@ -132,6 +131,7 @@ mod tests {
             NaiveDate::from_ymd_opt(2026, 5, 13).unwrap(),
             vec![Weekday::Sat],
             vec![],
+            false,
         );
         let season_config = SeasonConfig::new(time_configuration, date_configuration, 2);
         let season = Season::new(

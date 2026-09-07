@@ -5,11 +5,12 @@ use chrono_tz::Tz;
 use rust_i18n::t;
 use rust_xlsxwriter::workbook::Workbook;
 use rust_xlsxwriter::worksheet::Worksheet;
-use rust_xlsxwriter::{Color, Format, FormatAlign, FormatBorder};
+use rust_xlsxwriter::{Color, DataValidation, Format, FormatAlign, FormatBorder};
 
 use crate::errors::AppError;
 use crate::impls::round_robin::RoundRobin;
 use crate::impls::single_elimination::SingleElimination;
+use crate::types::configurations::date::DateConfiguration;
 use crate::types::game::Game;
 use crate::types::game_time::GameTime;
 use crate::types::season::{Season, SeasonConfig};
@@ -36,7 +37,7 @@ pub fn generate_excel_schedule(
     schedule: Vec<Game>,
     start_break: GameTime,
     end_break: GameTime,
-    excluded_dates: Vec<NaiveDate>,
+    date_configuration: DateConfiguration,
     number_fields: u16,
     output_directory_path: String,
     language: &str,
@@ -60,7 +61,12 @@ pub fn generate_excel_schedule(
         worksheet.set_column_width(5 * i + 2, 4)?;
     }
 
-    write_excluded_dates_column(worksheet, &excluded_dates, number_fields, language)?;
+    write_excluded_dates_column(
+        worksheet,
+        date_configuration.excluded_dates(),
+        number_fields,
+        language,
+    )?;
 
     let mut day_index = 1;
 
@@ -68,7 +74,15 @@ pub fn generate_excel_schedule(
         let game_day = game.get_game_day();
         if current_day != Some(game_day.date_naive()) {
             row += ROWS_BEFORE_DAY_BLOCK;
-            write_day_row(worksheet, row, game_day, day_index, number_fields, language)?;
+            write_day_row(
+                worksheet,
+                row,
+                game_day,
+                day_index,
+                number_fields,
+                &date_configuration,
+                language,
+            )?;
             day_index += 1;
             current_day = Some(game_day.date_naive());
             row += 1;
@@ -233,36 +247,81 @@ fn write_day_row(
     game_day: &DateTime<Tz>,
     day_index: u32,
     number_fields: u16,
+    date_configuration: &DateConfiguration,
     language: &str,
 ) -> Result<(), AppError> {
-    let day = game_day.day();
-    let month = game_day.month();
-    let year = game_day.year();
-    let month_str = chrono::Month::try_from(month as u8)?;
-
     let title_format = Format::new()
         .set_align(FormatAlign::Center)
         .set_align(FormatAlign::VerticalCenter)
         .set_border(FormatBorder::Thin)
         .set_background_color(Color::Red);
 
+    let scheduled_day = game_day.date_naive();
     worksheet.merge_range(
         row,
         0,
         row,
         number_fields * 5,
-        &t!(
-            "day",
-            locale = language,
-            day_index = day_index,
-            day = day,
-            month = month_str.name(),
-            year = year
-        ),
+        &day_label(&scheduled_day, day_index, language)?,
         &title_format,
     )?;
+
+    let choices = weekly_day_choices(&scheduled_day, day_index, date_configuration, language)?;
+    if choices.len() > 1 {
+        let validation = DataValidation::new().allow_list_strings(&choices)?;
+        worksheet.add_data_validation(row, 0, row, 0, &validation)?;
+    }
+
     worksheet.set_row_height(row, 25)?;
     Ok(())
+}
+
+fn day_label(day: &NaiveDate, day_index: u32, language: &str) -> Result<String, AppError> {
+    let month = chrono::Month::try_from(day.month() as u8)?;
+    Ok(t!(
+        "day",
+        locale = language,
+        day_index = day_index,
+        day = day.day(),
+        month = month.name(),
+        year = day.year()
+    )
+    .to_string())
+}
+
+// Every configured weekday in the same ISO week as the scheduled day, minus
+// the excluded ones. Returns a single entry when there's nothing to choose
+// between
+fn weekly_day_choices(
+    scheduled_day: &NaiveDate,
+    day_index: u32,
+    date_configuration: &DateConfiguration,
+    language: &str,
+) -> Result<Vec<String>, AppError> {
+    if !date_configuration.single_game_per_week() {
+        return Ok(vec![day_label(scheduled_day, day_index, language)?]);
+    }
+
+    let monday =
+        *scheduled_day - chrono::Days::new(scheduled_day.weekday().num_days_from_monday() as u64);
+
+    let mut labels = Vec::new();
+    for weekday in date_configuration.game_days() {
+        let candidate = monday + chrono::Days::new(weekday.num_days_from_monday() as u64);
+        if date_configuration.excluded_dates().contains(&candidate) {
+            continue;
+        }
+        labels.push(day_label(&candidate, day_index, language)?);
+    }
+
+    // The scheduled day always belongs in the list, even if it ended up
+    // outside the configured weekdays somehow.
+    let scheduled_label = day_label(scheduled_day, day_index, language)?;
+    if !labels.contains(&scheduled_label) {
+        labels.insert(0, scheduled_label);
+    }
+
+    Ok(labels)
 }
 
 fn write_header_row(
@@ -362,8 +421,13 @@ fn write_bye_game(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use chrono::Weekday;
     use std::fs::{create_dir_all, remove_dir_all};
     use std::path::PathBuf;
+
+    fn start_date() -> NaiveDate {
+        NaiveDate::from_ymd_opt(2026, 5, 13).unwrap()
+    }
 
     fn temp_output_dir(name: &str) -> PathBuf {
         let dir = std::env::temp_dir().join(format!("organi-bandit-test-{name}"));
@@ -379,7 +443,7 @@ mod tests {
             vec![],
             GameTime::new(12, 0).unwrap(),
             GameTime::new(13, 30).unwrap(),
-            vec![],
+            DateConfiguration::new(start_date(), vec![Weekday::Sat], vec![], false),
             1,
             output_dir.to_string_lossy().to_string(),
             "en",
@@ -407,10 +471,15 @@ mod tests {
             vec![game],
             GameTime::new(12, 0).unwrap(),
             GameTime::new(13, 30).unwrap(),
-            vec![
-                chrono::NaiveDate::from_ymd_opt(2026, 7, 4).unwrap(),
-                chrono::NaiveDate::from_ymd_opt(2026, 5, 16).unwrap(),
-            ],
+            DateConfiguration::new(
+                start_date(),
+                vec![Weekday::Sat],
+                vec![
+                    chrono::NaiveDate::from_ymd_opt(2026, 7, 4).unwrap(),
+                    chrono::NaiveDate::from_ymd_opt(2026, 5, 16).unwrap(),
+                ],
+                false,
+            ),
             1,
             output_dir.to_string_lossy().to_string(),
             "en",
@@ -442,6 +511,74 @@ mod tests {
         assert!(sheet.contains("r=\"G4\""), "no cell at G4: {sheet}");
 
         remove_dir_all(&output_dir).unwrap();
+    }
+
+    #[test]
+    fn weekly_day_choices_offers_every_configured_weekday_in_that_week() {
+        let configuration = DateConfiguration::new(
+            date(2026, 5, 16),
+            vec![Weekday::Sat, Weekday::Sun],
+            vec![],
+            true,
+        );
+
+        // Saturday 16/05; the Sunday of the same week is 17/05.
+        let choices = weekly_day_choices(&date(2026, 5, 16), 1, &configuration, "en").unwrap();
+
+        assert_eq!(choices, vec!["Day 1: 16 May 2026", "Day 1: 17 May 2026"]);
+    }
+
+    #[test]
+    fn weekly_day_choices_offers_only_the_scheduled_day_when_the_option_is_off() {
+        let configuration = DateConfiguration::new(
+            date(2026, 5, 16),
+            vec![Weekday::Sat, Weekday::Sun],
+            vec![],
+            false,
+        );
+
+        let choices = weekly_day_choices(&date(2026, 5, 16), 1, &configuration, "en").unwrap();
+
+        assert_eq!(choices, vec!["Day 1: 16 May 2026"]);
+    }
+
+    #[test]
+    fn weekly_day_choices_offers_only_the_scheduled_day_for_a_single_weekday() {
+        let configuration =
+            DateConfiguration::new(date(2026, 5, 16), vec![Weekday::Sat], vec![], true);
+
+        let choices = weekly_day_choices(&date(2026, 5, 16), 1, &configuration, "en").unwrap();
+
+        assert_eq!(choices, vec!["Day 1: 16 May 2026"]);
+    }
+
+    #[test]
+    fn weekly_day_choices_leaves_out_excluded_alternatives() {
+        let configuration = DateConfiguration::new(
+            date(2026, 5, 16),
+            vec![Weekday::Sat, Weekday::Sun],
+            vec![date(2026, 5, 17)],
+            true,
+        );
+
+        let choices = weekly_day_choices(&date(2026, 5, 16), 1, &configuration, "en").unwrap();
+
+        assert_eq!(choices, vec!["Day 1: 16 May 2026"]);
+    }
+
+    #[test]
+    fn weekly_day_choices_includes_the_scheduled_day_after_a_fallback() {
+        let configuration = DateConfiguration::new(
+            date(2026, 5, 16),
+            vec![Weekday::Sat, Weekday::Sun],
+            vec![date(2026, 5, 23)],
+            true,
+        );
+
+        // The Saturday was excluded, so this week runs on the Sunday.
+        let choices = weekly_day_choices(&date(2026, 5, 24), 1, &configuration, "en").unwrap();
+
+        assert_eq!(choices, vec!["Day 1: 24 May 2026"]);
     }
 
     fn date(year: i32, month: u32, day: u32) -> NaiveDate {
@@ -537,7 +674,7 @@ mod tests {
             vec![game],
             GameTime::new(12, 0).unwrap(),
             GameTime::new(13, 30).unwrap(),
-            vec![],
+            DateConfiguration::new(start_date(), vec![Weekday::Sat], vec![], false),
             1,
             output_dir.to_string_lossy().to_string(),
             "en",
@@ -568,7 +705,7 @@ mod tests {
             vec![game],
             GameTime::new(12, 0).unwrap(),
             GameTime::new(13, 30).unwrap(),
-            vec![],
+            DateConfiguration::new(start_date(), vec![Weekday::Sat], vec![], false),
             1,
             output_dir.to_string_lossy().to_string(),
             "en",
@@ -601,7 +738,7 @@ mod tests {
             vec![game("Home", "Away")],
             GameTime::new(12, 0).unwrap(),
             GameTime::new(13, 30).unwrap(),
-            vec![],
+            DateConfiguration::new(start_date(), vec![Weekday::Sat], vec![], false),
             1,
             output_dir.to_string_lossy().to_string(),
             "en",
@@ -617,7 +754,7 @@ mod tests {
             vec![game("Other Home", "Other Away")],
             GameTime::new(12, 0).unwrap(),
             GameTime::new(13, 30).unwrap(),
-            vec![],
+            DateConfiguration::new(start_date(), vec![Weekday::Sat], vec![], false),
             1,
             output_dir.to_string_lossy().to_string(),
             "en",
@@ -638,7 +775,7 @@ mod tests {
             vec![game("Third Home", "Third Away")],
             GameTime::new(12, 0).unwrap(),
             GameTime::new(13, 30).unwrap(),
-            vec![],
+            DateConfiguration::new(start_date(), vec![Weekday::Sat], vec![], false),
             1,
             output_dir.to_string_lossy().to_string(),
             "en",

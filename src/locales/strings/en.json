@@ -1,4 +1,5 @@
 {
+    "add-excluded-date": "Add excluded dates",
     "browse-output-folder": "Browse...",
     "browse-teams": "Browse teams file...",
     "cancel": "Cancel",
@@ -13,7 +14,6 @@
     "day-tuesday": "Tuesday",
     "day-wednesday": "Wednesday",
     "edit": "Edit",
-    "add-excluded-date": "Add excluded dates",
     "end-break": "End break",
     "excluded-date-to": "to",
     "excluded-dates": "Excluded dates",
@@ -27,6 +27,7 @@
     "output-folder": "Output folder",
     "output-folder-placeholder": "Select a folder...",
     "save": "Save",
+    "single-game-per-week": "Single game per week",
     "start-break": "Start break",
     "start-date": "Start date",
     "start-time": "Start time",
