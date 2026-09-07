@@ -52,6 +52,8 @@ pub enum AppError {
     InsufficientDailyCapacity(u32, u32),
     #[error("cannot subtract {1} from {0}: {1} is later in the day than {0}")]
     GameTimeSubtractionUnderflow(GameTime, GameTime),
+    #[error("the next 10 dates starting from {0} are all excluded")]
+    NoStartDate(NaiveDate),
 }
 
 impl Serialize for AppError {

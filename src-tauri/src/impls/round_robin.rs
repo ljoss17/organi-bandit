@@ -365,8 +365,11 @@ impl RoundRobin {
 
         let mut schedule = Vec::with_capacity((number_teams - 1) * (number_teams / 2));
 
-        let mut game_day_scheduler =
-            GameDayScheduler::new(start_date, season_config.date_configuration().game_days())?;
+        let mut game_day_scheduler = GameDayScheduler::new(
+            start_date,
+            season_config.date_configuration().game_days(),
+            season_config.date_configuration().excluded_dates(),
+        )?;
         let mut game_time_scheduler = GameTimeScheduler::new(
             time_configuration,
             leg_start_time,
@@ -387,7 +390,7 @@ impl RoundRobin {
                 // advance happened to tick past hard_stop with nothing left
                 // that actually needed the room.
                 if !is_bye {
-                    game_day_scheduler.advance_if_past_hard_stop(&mut game_time_scheduler);
+                    game_day_scheduler.advance_if_past_hard_stop(&mut game_time_scheduler)?;
                 }
                 let game_day = *game_day_scheduler.current_day();
                 let game_time = *game_time_scheduler.current_time();
@@ -399,7 +402,7 @@ impl RoundRobin {
                 }
             }
 
-            game_day_scheduler.advance();
+            game_day_scheduler.advance()?;
             Self::rotate_teams(&mut inner_teams);
         }
 
@@ -564,7 +567,7 @@ mod tests {
             GameTime::new(1, 0).unwrap(),
             GameTime::new(0, 30).unwrap(),
         );
-        let date_configuration = DateConfiguration::new(start_date(), vec![Weekday::Sat]);
+        let date_configuration = DateConfiguration::new(start_date(), vec![Weekday::Sat], vec![]);
         let season_config = SeasonConfig::new(time_configuration, date_configuration, 1);
         let round_robin = RoundRobin;
 
@@ -583,7 +586,7 @@ mod tests {
             GameTime::new(1, 0).unwrap(),
             GameTime::new(0, 30).unwrap(),
         );
-        let date_configuration = DateConfiguration::new(start_date(), vec![Weekday::Sat]);
+        let date_configuration = DateConfiguration::new(start_date(), vec![Weekday::Sat], vec![]);
         let season_config = SeasonConfig::new(time_configuration, date_configuration, 1);
 
         let result =
@@ -602,7 +605,7 @@ mod tests {
             GameTime::new(1, 0).unwrap(),
             GameTime::new(0, 30).unwrap(),
         );
-        let date_configuration = DateConfiguration::new(start_date(), vec![Weekday::Sat]);
+        let date_configuration = DateConfiguration::new(start_date(), vec![Weekday::Sat], vec![]);
         let season_config = SeasonConfig::new(time_configuration, date_configuration, 0);
 
         let result =
@@ -622,7 +625,7 @@ mod tests {
             GameTime::new(0, 0).unwrap(),
             GameTime::new(0, 30).unwrap(),
         );
-        let date_configuration = DateConfiguration::new(start_date(), vec![Weekday::Sat]);
+        let date_configuration = DateConfiguration::new(start_date(), vec![Weekday::Sat], vec![]);
         let season_config = SeasonConfig::new(time_configuration, date_configuration, 2);
 
         let result =
@@ -643,7 +646,7 @@ mod tests {
             GameTime::new(1, 0).unwrap(),
             GameTime::new(0, 0).unwrap(),
         );
-        let date_configuration = DateConfiguration::new(start_date(), vec![Weekday::Sat]);
+        let date_configuration = DateConfiguration::new(start_date(), vec![Weekday::Sat], vec![]);
         let season_config = SeasonConfig::new(time_configuration, date_configuration, 1);
 
         let schedule = RoundRobin
@@ -668,7 +671,7 @@ mod tests {
             GameTime::new(0, 45).unwrap(),
             GameTime::new(0, 15).unwrap(),
         );
-        let date_configuration = DateConfiguration::new(start_date(), vec![Weekday::Sat]);
+        let date_configuration = DateConfiguration::new(start_date(), vec![Weekday::Sat], vec![]);
         let season_config = SeasonConfig::new(time_configuration, date_configuration, 1);
 
         let result = RoundRobin.compute_schedule(&teams, &start_date(), &season_config, false);
@@ -693,7 +696,7 @@ mod tests {
             GameTime::new(1, 0).unwrap(),
             GameTime::new(0, 30).unwrap(),
         );
-        let date_configuration = DateConfiguration::new(start_date(), vec![Weekday::Sat]);
+        let date_configuration = DateConfiguration::new(start_date(), vec![Weekday::Sat], vec![]);
         let season_config = SeasonConfig::new(time_configuration, date_configuration, 2);
 
         let result = RoundRobin.compute_schedule(&teams, &start_date(), &season_config, true);
@@ -713,7 +716,7 @@ mod tests {
             GameTime::new(1, 0).unwrap(),
             GameTime::new(0, 30).unwrap(),
         );
-        let date_configuration = DateConfiguration::new(start_date(), vec![Weekday::Sat]);
+        let date_configuration = DateConfiguration::new(start_date(), vec![Weekday::Sat], vec![]);
         let season_config = SeasonConfig::new(time_configuration, date_configuration, 1);
 
         let schedule = RoundRobin
@@ -739,7 +742,7 @@ mod tests {
             GameTime::new(0, 30).unwrap(),
         );
         let date_configuration =
-            DateConfiguration::new(start_date(), vec![Weekday::Wed, Weekday::Sat]);
+            DateConfiguration::new(start_date(), vec![Weekday::Wed, Weekday::Sat], vec![]);
         let season_config = SeasonConfig::new(time_configuration, date_configuration, 2);
 
         let result = RoundRobin.compute_schedule(&teams, &start_date(), &season_config, false);
@@ -762,7 +765,7 @@ mod tests {
             GameTime::new(0, 30).unwrap(),
         );
         let date_configuration =
-            DateConfiguration::new(start_date(), vec![Weekday::Wed, Weekday::Sat]);
+            DateConfiguration::new(start_date(), vec![Weekday::Wed, Weekday::Sat], vec![]);
         let season_config = SeasonConfig::new(time_configuration, date_configuration, 3);
 
         let schedule = RoundRobin
@@ -786,7 +789,7 @@ mod tests {
             GameTime::new(1, 30).unwrap(),
             GameTime::new(0, 30).unwrap(),
         );
-        let date_configuration = DateConfiguration::new(start_date(), vec![Weekday::Sat]);
+        let date_configuration = DateConfiguration::new(start_date(), vec![Weekday::Sat], vec![]);
         let season_config = SeasonConfig::new(time_configuration, date_configuration, 2);
 
         let schedule = RoundRobin
@@ -809,7 +812,7 @@ mod tests {
             GameTime::new(0, 15).unwrap(),
         );
         let date_configuration =
-            DateConfiguration::new(start_date(), vec![Weekday::Wed, Weekday::Sat]);
+            DateConfiguration::new(start_date(), vec![Weekday::Wed, Weekday::Sat], vec![]);
         let season_config = SeasonConfig::new(time_configuration, date_configuration, 1);
 
         let schedule = RoundRobin
@@ -830,7 +833,7 @@ mod tests {
             GameTime::new(1, 0).unwrap(),
             GameTime::new(0, 30).unwrap(),
         );
-        let date_configuration = DateConfiguration::new(start_date(), vec![Weekday::Sat]);
+        let date_configuration = DateConfiguration::new(start_date(), vec![Weekday::Sat], vec![]);
         let season_config = SeasonConfig::new(time_configuration, date_configuration, 2);
 
         let schedule = RoundRobin
@@ -852,8 +855,11 @@ mod tests {
             GameTime::new(1, 0).unwrap(),
             GameTime::new(0, 30).unwrap(),
         );
-        let date_configuration =
-            DateConfiguration::new(start_date(), vec![Weekday::Wed, Weekday::Sat, Weekday::Sun]);
+        let date_configuration = DateConfiguration::new(
+            start_date(),
+            vec![Weekday::Wed, Weekday::Sat, Weekday::Sun],
+            vec![],
+        );
         let season_config = SeasonConfig::new(time_configuration, date_configuration, 2);
 
         let schedule = RoundRobin
@@ -886,7 +892,7 @@ mod tests {
             GameTime::new(0, 45).unwrap(),
             GameTime::new(0, 15).unwrap(),
         );
-        let date_configuration = DateConfiguration::new(start_date(), vec![Weekday::Sat]);
+        let date_configuration = DateConfiguration::new(start_date(), vec![Weekday::Sat], vec![]);
         let season_config = SeasonConfig::new(time_configuration.clone(), date_configuration, 1);
 
         let schedule = RoundRobin
@@ -923,7 +929,7 @@ mod tests {
             GameTime::new(0, 45).unwrap(),
             GameTime::new(0, 15).unwrap(),
         );
-        let date_configuration = DateConfiguration::new(start_date(), vec![Weekday::Sat]);
+        let date_configuration = DateConfiguration::new(start_date(), vec![Weekday::Sat], vec![]);
         let season_config = SeasonConfig::new(time_configuration, date_configuration, 1);
 
         let result = RoundRobin.compute_schedule(&teams, &start_date(), &season_config, false);

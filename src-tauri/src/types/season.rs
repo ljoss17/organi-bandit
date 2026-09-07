@@ -88,8 +88,9 @@ where
         let mut game_day_scheduler = GameDayScheduler::new(
             &last_group_stage_day,
             self.season_config().date_configuration().game_days(),
+            self.season_config().date_configuration().excluded_dates(),
         )?;
-        game_day_scheduler.advance();
+        game_day_scheduler.advance()?;
 
         // Note: Currently playoffs are fixed to quarter finales -> finals
         let playoff_teams = teams.iter().take(8).cloned().collect::<Vec<_>>();
@@ -130,6 +131,7 @@ mod tests {
         let date_configuration = DateConfiguration::new(
             NaiveDate::from_ymd_opt(2026, 5, 13).unwrap(),
             vec![Weekday::Sat],
+            vec![],
         );
         let season_config = SeasonConfig::new(time_configuration, date_configuration, 2);
         let season = Season::new(
@@ -155,7 +157,8 @@ mod tests {
             "gameDuration": {"hour": 1, "minute": 0},
             "timeBetweenGames": {"hour": 0, "minute": 30},
             "numberFields": 2,
-            "gameDays": ["Sat"]
+            "gameDays": ["Sat"],
+            "excludedDates": []
         }"#;
 
         let season_config: SeasonConfig =
