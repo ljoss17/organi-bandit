@@ -18,6 +18,8 @@ pub enum AppError {
     DeserializeError(#[from] SerdeError),
     #[error("failed to find game")]
     MissingGame,
+    #[error("team name '{0}' is invalid")]
+    InvalidTeamName(String),
     #[error("not enough teams. Got {0}, require at least {1}")]
     NotEnoughTeams(usize, usize),
     #[error("Xlsx error")]

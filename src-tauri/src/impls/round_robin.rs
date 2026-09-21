@@ -144,9 +144,9 @@ impl RoundRobin {
         let mut bye_team_by_day: HashMap<NaiveDate, &Team> = HashMap::new();
         for game in schedule.iter() {
             let day = game.get_game_day().date_naive();
-            if game.get_home_team().get_name() == "Bye" {
+            if game.get_home_team().is_bye() {
                 bye_team_by_day.insert(day, game.get_away_team());
-            } else if game.get_away_team().get_name() == "Bye" {
+            } else if game.get_away_team().is_bye() {
                 bye_team_by_day.insert(day, game.get_home_team());
             }
         }
@@ -358,7 +358,7 @@ impl RoundRobin {
         let mut rng = rand::rng();
         let mut inner_teams = teams.to_vec();
         if !inner_teams.len().is_multiple_of(2) {
-            inner_teams.push(Team::new("Bye", None));
+            inner_teams.push(Team::bye());
         }
         inner_teams.shuffle(&mut rng);
         let number_teams = inner_teams.len();
@@ -379,7 +379,7 @@ impl RoundRobin {
             for i in 0..(number_teams / 2) {
                 let home_team = inner_teams[i].clone();
                 let away_team = inner_teams[number_teams - 1 - i].clone();
-                let is_bye = home_team.get_name() == "Bye" || away_team.get_name() == "Bye";
+                let is_bye = home_team.is_bye() || away_team.is_bye();
                 // A bye never advances the clock, so it can never legitimately
                 // need to spill onto a new day either — skipping the check
                 // here avoids the round's harmless bye slot getting stranded
@@ -417,7 +417,7 @@ impl RoundRobin {
     // passes don't combine cleanly and the caller should try a fresh pair
     // of schedules.
     fn merge_schedules(&self, pass_a: Vec<Game>, pass_b: Vec<Game>) -> Option<Vec<Game>> {
-        let has_bye = pass_a.iter().any(is_bye_game);
+        let has_bye = pass_a.iter().any(|game| game.is_bye());
 
         let pass_a_days = group_by_day(pass_a);
         let pass_b_days = group_by_day(pass_b);
@@ -454,7 +454,7 @@ impl RoundRobin {
 
             // A same-day rematch means these two passes don't combine cleanly.
             let mut opponent_in_a: HashMap<&str, &str> = HashMap::new();
-            for game in games_a.iter().filter(|game| !is_bye_game(game)) {
+            for game in games_a.iter().filter(|game| !game.is_bye()) {
                 opponent_in_a.insert(
                     game.get_home_team().get_name(),
                     game.get_away_team().get_name(),
@@ -464,7 +464,7 @@ impl RoundRobin {
                     game.get_home_team().get_name(),
                 );
             }
-            for game in games_b.iter().filter(|game| !is_bye_game(game)) {
+            for game in games_b.iter().filter(|game| !game.is_bye()) {
                 if opponent_in_a.get(game.get_home_team().get_name())
                     == Some(&game.get_away_team().get_name())
                 {
@@ -483,7 +483,7 @@ impl RoundRobin {
             // scheduler. Only the calendar day is re-stamped to pass_a's,
             // as a cheap safety net in case the two passes' day sequences
             // ever drift.
-            for game in games_b.into_iter().filter(|game| !is_bye_game(game)) {
+            for game in games_b.into_iter().filter(|game| !game.is_bye()) {
                 let game_time = game.get_game_time().ok()?;
                 let updated_game = Game::new_with_game_day(
                     game.get_home_team().clone(),
@@ -499,10 +499,6 @@ impl RoundRobin {
 
         Some(merged)
     }
-}
-
-fn is_bye_game(game: &Game) -> bool {
-    game.get_home_team().get_name() == "Bye" || game.get_away_team().get_name() == "Bye"
 }
 
 fn bye_team_name(games: &[Game]) -> Option<&str> {
@@ -551,7 +547,7 @@ mod tests {
 
     fn many_teams(count: usize) -> Vec<Team> {
         (0..count)
-            .map(|i| Team::new(&format!("T{i}"), None))
+            .map(|i| Team::new(&format!("T{i}"), None).unwrap())
             .collect()
     }
 
@@ -922,7 +918,7 @@ mod tests {
 
         let duration = *time_configuration.game_duration();
         let start_break = *time_configuration.start_break();
-        for game in schedule.iter().filter(|game| !is_bye_game(game)) {
+        for game in schedule.iter().filter(|game| !game.is_bye()) {
             let kickoff = game
                 .get_game_time()
                 .expect("a real game's time should always be extractable");
@@ -1053,7 +1049,7 @@ mod tests {
                 "game on {day} is scheduled before the season start date {start_date}"
             );
 
-            let is_bye = home_team.get_name() == "Bye" || away_team.get_name() == "Bye";
+            let is_bye = home_team.is_bye() || away_team.is_bye();
             if !is_bye {
                 *computed_game_days.entry(game_day).or_insert(0) += 1;
                 team_real_game_days
@@ -1110,7 +1106,7 @@ mod tests {
                     assert_ne!(referee, away_team, "referee is playing in their own game");
                 }
             } else {
-                let bye_team_name = if home_team.get_name() == "Bye" {
+                let bye_team_name = if home_team.is_bye() {
                     away_team.get_name()
                 } else {
                     home_team.get_name()

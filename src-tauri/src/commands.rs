@@ -108,7 +108,7 @@ pub fn generate_excel_schedule(
         }
         current_time = Some(game_day.time());
 
-        if game.get_home_team().get_name() == "Bye" || game.get_away_team().get_name() == "Bye" {
+        if game.is_bye() {
             write_bye_game(worksheet, game, row, number_fields)?;
             continue;
         }
@@ -458,8 +458,8 @@ mod tests {
         use crate::types::game_time::GameTime;
 
         let game = Game::new_with_game_day(
-            Team::new("Home", None),
-            Team::new("Away", None),
+            Team::new("Home", None).unwrap(),
+            Team::new("Away", None).unwrap(),
             chrono::NaiveDate::from_ymd_opt(2026, 5, 13).unwrap(),
             GameTime::new(9, 0).unwrap(),
             None,
@@ -661,8 +661,8 @@ mod tests {
         use crate::types::game_time::GameTime;
 
         let game = Game::new_with_game_day(
-            Team::new("Home", None),
-            Team::new("Away", None),
+            Team::new("Home", None).unwrap(),
+            Team::new("Away", None).unwrap(),
             chrono::NaiveDate::from_ymd_opt(2026, 5, 13).unwrap(),
             GameTime::new(9, 0).unwrap(),
             None,
@@ -692,8 +692,8 @@ mod tests {
         // the test actually runs in, so the assertion can't accidentally
         // pass by coincidence.
         let game = Game::new_with_game_day(
-            Team::new("Home", None),
-            Team::new("Away", None),
+            Team::new("Home", None).unwrap(),
+            Team::new("Away", None).unwrap(),
             chrono::NaiveDate::from_ymd_opt(2030, 5, 13).unwrap(),
             GameTime::new(9, 0).unwrap(),
             None,
@@ -722,8 +722,8 @@ mod tests {
 
         fn game(home: &str, away: &str) -> Game {
             Game::new_with_game_day(
-                Team::new(home, None),
-                Team::new(away, None),
+                Team::new(home, None).unwrap(),
+                Team::new(away, None).unwrap(),
                 chrono::NaiveDate::from_ymd_opt(2030, 5, 13).unwrap(),
                 GameTime::new(9, 0).unwrap(),
                 None,

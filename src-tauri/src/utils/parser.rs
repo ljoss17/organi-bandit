@@ -38,8 +38,8 @@ mod tests {
     fn test_read_team_list() {
         let teams = read_team_list(Path::new("resources/test_teams.json"))
             .expect("failed to read team file");
-        assert_eq!(teams[0], Team::new("Morges Bandits", None));
-        assert_eq!(teams[1], Team::new("Yverdon Ducs", Some(3)));
-        assert_eq!(teams[2], Team::new("Lausanne Rockets", None));
+        assert_eq!(teams[0], Team::new("Morges Bandits", None).unwrap());
+        assert_eq!(teams[1], Team::new("Yverdon Ducs", Some(3)).unwrap());
+        assert_eq!(teams[2], Team::new("Lausanne Rockets", None).unwrap());
     }
 }

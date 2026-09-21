@@ -65,6 +65,10 @@ impl Game {
     pub fn get_referee(&self) -> &Option<Team> {
         &self.referee
     }
+
+    pub fn is_bye(&self) -> bool {
+        self.home_team.is_bye() || self.away_team.is_bye()
+    }
 }
 
 #[cfg(test)]
@@ -74,8 +78,8 @@ mod tests {
     #[test]
     fn test_serialize_deserialize() {
         let game = Game::new_with_game_day(
-            Team::new("Home", None),
-            Team::new("Away", None),
+            Team::new("Home", None).unwrap(),
+            Team::new("Away", None).unwrap(),
             NaiveDate::from_ymd_opt(2026, 7, 22).unwrap(),
             GameTime::new(20, 30).unwrap(),
             None,
@@ -94,8 +98,8 @@ mod tests {
     #[test]
     fn new_with_game_day_combines_date_and_time() {
         let game = Game::new_with_game_day(
-            Team::new("Home", None),
-            Team::new("Away", None),
+            Team::new("Home", None).unwrap(),
+            Team::new("Away", None).unwrap(),
             NaiveDate::from_ymd_opt(2026, 7, 22).unwrap(),
             GameTime::new(20, 30).unwrap(),
             None,
@@ -113,8 +117,8 @@ mod tests {
     #[test]
     fn get_game_time_round_trips_the_stored_time() {
         let game = Game::new_with_game_day(
-            Team::new("Home", None),
-            Team::new("Away", None),
+            Team::new("Home", None).unwrap(),
+            Team::new("Away", None).unwrap(),
             NaiveDate::from_ymd_opt(2026, 7, 22).unwrap(),
             GameTime::new(9, 15).unwrap(),
             None,
@@ -126,10 +130,10 @@ mod tests {
 
     #[test]
     fn get_referee_returns_the_assigned_referee() {
-        let referee = Team::new("Referee Team", None);
+        let referee = Team::new("Referee Team", None).unwrap();
         let game = Game::new_with_game_day(
-            Team::new("Home", None),
-            Team::new("Away", None),
+            Team::new("Home", None).unwrap(),
+            Team::new("Away", None).unwrap(),
             NaiveDate::from_ymd_opt(2026, 7, 22).unwrap(),
             GameTime::new(9, 15).unwrap(),
             Some(referee.clone()),
@@ -144,8 +148,8 @@ mod tests {
         // 2026-03-29 02:30 in Europe/Zurich falls in the DST "spring forward"
         // gap (clocks jump 02:00 -> 03:00), so this time does not exist.
         let result = Game::new_with_game_day(
-            Team::new("Home", None),
-            Team::new("Away", None),
+            Team::new("Home", None).unwrap(),
+            Team::new("Away", None).unwrap(),
             NaiveDate::from_ymd_opt(2026, 3, 29).unwrap(),
             GameTime::new(2, 30).unwrap(),
             None,
@@ -159,8 +163,8 @@ mod tests {
         // 2026-10-25 02:30 in Europe/Zurich is ambiguous (clocks jump
         // 03:00 -> 02:00, so this time occurs twice).
         let result = Game::new_with_game_day(
-            Team::new("Home", None),
-            Team::new("Away", None),
+            Team::new("Home", None).unwrap(),
+            Team::new("Away", None).unwrap(),
             NaiveDate::from_ymd_opt(2026, 10, 25).unwrap(),
             GameTime::new(2, 30).unwrap(),
             None,

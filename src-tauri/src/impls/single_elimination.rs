@@ -65,7 +65,7 @@ impl Tournament for SingleElimination {
                         Some(number_of_teams as u32 - value as u32),
                     )
                 })
-                .collect::<Vec<_>>()
+                .collect::<Result<Vec<_>, _>>()?
         } else {
             let mut inner = teams.to_vec();
             inner.sort_by_key(|team| team.get_seed());
@@ -85,7 +85,7 @@ impl Tournament for SingleElimination {
         let bye_time = GameTime::new(0, 0)?;
         for i in 0..number_of_byes {
             let home_team = inner_teams[i].clone();
-            let bye_team = Team::new("Bye", None);
+            let bye_team = Team::bye();
 
             let game = Game::new_with_game_day(
                 home_team,
@@ -126,7 +126,7 @@ impl Tournament for SingleElimination {
         // Compute the second round of single elimination, taking into account first round bye weeks.
         // Bye recipients from round 1 are paired against each other two at a time. An odd one out
         // (when number_of_byes is odd) plays the still-undecided winner of a round-1 real game. Any
-        // round-1 real games left over after that play each other, using the same WinnerA/WinnerB
+        // round-1 real games left over after that play each other, using the same Winner A/Winner B
         // placeholder names later rounds use, since neither side is known yet.
         let bye_recipients = &inner_teams[..number_of_byes];
         let bye_recipient_pairs = bye_recipients.as_chunks::<2>();
@@ -151,7 +151,7 @@ impl Tournament for SingleElimination {
         if let [leftover_bye_recipient] = bye_recipient_pairs.1 {
             game_day_scheduler.advance_if_past_hard_stop(&mut game_time_scheduler)?;
             let home_team = leftover_bye_recipient.clone();
-            let away_team = Team::new("WinnerPrevious", None);
+            let away_team = Team::new("Winner Previous", None)?;
             let game_time = *game_time_scheduler.current_time();
             let game = Game::new_with_game_day(
                 home_team,
@@ -168,8 +168,8 @@ impl Tournament for SingleElimination {
 
         for _ in 0..winner_previous_slots / 2 {
             game_day_scheduler.advance_if_past_hard_stop(&mut game_time_scheduler)?;
-            let home_team = Team::new("WinnerA", None);
-            let away_team = Team::new("WinnerB", None);
+            let home_team = Team::new("Winner A", None)?;
+            let away_team = Team::new("Winner B", None)?;
             let game_time = *game_time_scheduler.current_time();
             let game = Game::new_with_game_day(
                 home_team,
@@ -196,8 +196,8 @@ impl Tournament for SingleElimination {
             for _ in 0..number_of_games {
                 game_day_scheduler.advance_if_past_hard_stop(&mut game_time_scheduler)?;
                 let game_time = *game_time_scheduler.current_time();
-                let home_team = Team::new("WinnerA", None);
-                let away_team = Team::new("WinnerB", None);
+                let home_team = Team::new("Winner A", None)?;
+                let away_team = Team::new("Winner B", None)?;
                 let game = Game::new_with_game_day(
                     home_team,
                     away_team,
@@ -243,25 +243,25 @@ mod tests {
 
     fn teams() -> [Team; 5] {
         [
-            Team::new("Morges Bandits", None),
-            Team::new("Yverdon Ducs", None),
-            Team::new("Lausanne Rockets", None),
-            Team::new("Team A", None),
-            Team::new("Team B", None),
+            Team::new("Morges Bandits", None).unwrap(),
+            Team::new("Yverdon Ducs", None).unwrap(),
+            Team::new("Lausanne Rockets", None).unwrap(),
+            Team::new("Team A", None).unwrap(),
+            Team::new("Team B", None).unwrap(),
         ]
     }
 
     fn teams_bigger() -> [Team; 9] {
         [
-            Team::new("Morges Bandits", None),
-            Team::new("Yverdon Ducs", None),
-            Team::new("Lausanne Rockets", None),
-            Team::new("Team A", None),
-            Team::new("Team B", None),
-            Team::new("Team C", None),
-            Team::new("Team D", None),
-            Team::new("Team E", None),
-            Team::new("Team F", None),
+            Team::new("Morges Bandits", None).unwrap(),
+            Team::new("Yverdon Ducs", None).unwrap(),
+            Team::new("Lausanne Rockets", None).unwrap(),
+            Team::new("Team A", None).unwrap(),
+            Team::new("Team B", None).unwrap(),
+            Team::new("Team C", None).unwrap(),
+            Team::new("Team D", None).unwrap(),
+            Team::new("Team E", None).unwrap(),
+            Team::new("Team F", None).unwrap(),
         ]
     }
 
@@ -298,8 +298,8 @@ mod tests {
         let season_config = SeasonConfig::new(time_configuration, date_configuration, 1);
         let single_elimination = SingleElimination::new(false);
 
-        let result =
-            single_elimination.validate_parameters(&[Team::new("Solo Team", None)], &season_config);
+        let result = single_elimination
+            .validate_parameters(&[Team::new("Solo Team", None).unwrap()], &season_config);
 
         assert!(matches!(result, Err(AppError::NotEnoughTeams(1, 2))));
     }
@@ -515,7 +515,9 @@ mod tests {
         // slots in a single day than the day's time window provides before
         // wrapping back around, colliding with a time already used earlier
         // that same day, the same failure mode found in round_robin.rs.
-        let teams: Vec<Team> = (0..32).map(|i| Team::new(&format!("T{i}"), None)).collect();
+        let teams: Vec<Team> = (0..32)
+            .map(|i| Team::new(&format!("T{i}"), None).unwrap())
+            .collect();
         let time_configuration = TimeConfiguration::new(
             GameTime::new(9, 0).unwrap(),
             GameTime::new(12, 0).unwrap(),
@@ -558,7 +560,9 @@ mod tests {
     // to do under the same tight, 1-field window.
     #[test]
     fn test_round_2_respects_single_field_capacity() {
-        let teams: Vec<Team> = (0..20).map(|i| Team::new(&format!("T{i}"), None)).collect();
+        let teams: Vec<Team> = (0..20)
+            .map(|i| Team::new(&format!("T{i}"), None).unwrap())
+            .collect();
         let time_configuration = TimeConfiguration::new(
             GameTime::new(9, 0).unwrap(),
             GameTime::new(12, 0).unwrap(),
@@ -640,11 +644,11 @@ mod tests {
         // Seed 1 is the top seed by convention; the lowest seed numbers
         // should be the ones receiving byes.
         let teams = [
-            Team::new("Seed 1", Some(1)),
-            Team::new("Seed 2", Some(2)),
-            Team::new("Seed 3", Some(3)),
-            Team::new("Seed 4", Some(4)),
-            Team::new("Seed 5", Some(5)),
+            Team::new("Seed 1", Some(1)).unwrap(),
+            Team::new("Seed 2", Some(2)).unwrap(),
+            Team::new("Seed 3", Some(3)).unwrap(),
+            Team::new("Seed 4", Some(4)).unwrap(),
+            Team::new("Seed 5", Some(5)).unwrap(),
         ];
         let time_configuration = TimeConfiguration::new(
             GameTime::new(9, 0).unwrap(),
@@ -683,10 +687,10 @@ mod tests {
     #[test]
     fn test_single_elimination_power_of_two_team_count_needs_no_byes() {
         let teams = [
-            Team::new("A", None),
-            Team::new("B", None),
-            Team::new("C", None),
-            Team::new("D", None),
+            Team::new("A", None).unwrap(),
+            Team::new("B", None).unwrap(),
+            Team::new("C", None).unwrap(),
+            Team::new("D", None).unwrap(),
         ];
         let time_configuration = TimeConfiguration::new(
             GameTime::new(9, 0).unwrap(),
@@ -715,7 +719,7 @@ mod tests {
 
     #[test]
     fn test_single_elimination_two_teams_minimal_bracket() {
-        let teams = [Team::new("A", None), Team::new("B", None)];
+        let teams = [Team::new("A", None).unwrap(), Team::new("B", None).unwrap()];
         let time_configuration = TimeConfiguration::new(
             GameTime::new(9, 0).unwrap(),
             GameTime::new(12, 0).unwrap(),
@@ -737,9 +741,9 @@ mod tests {
     #[test]
     fn test_single_elimination_three_teams_smallest_bye_case() {
         let teams = [
-            Team::new("A", None),
-            Team::new("B", None),
-            Team::new("C", None),
+            Team::new("A", None).unwrap(),
+            Team::new("B", None).unwrap(),
+            Team::new("C", None).unwrap(),
         ];
         let time_configuration = TimeConfiguration::new(
             GameTime::new(9, 0).unwrap(),
@@ -762,12 +766,12 @@ mod tests {
     #[test]
     fn test_single_elimination_even_number_of_byes() {
         let teams = [
-            Team::new("A", None),
-            Team::new("B", None),
-            Team::new("C", None),
-            Team::new("D", None),
-            Team::new("E", None),
-            Team::new("F", None),
+            Team::new("A", None).unwrap(),
+            Team::new("B", None).unwrap(),
+            Team::new("C", None).unwrap(),
+            Team::new("D", None).unwrap(),
+            Team::new("E", None).unwrap(),
+            Team::new("F", None).unwrap(),
         ];
         let time_configuration = TimeConfiguration::new(
             GameTime::new(9, 0).unwrap(),
@@ -785,14 +789,7 @@ mod tests {
             .unwrap();
 
         // 6 teams -> bracket of 8 -> 2 byes (even).
-        assert_eq!(
-            schedule
-                .iter()
-                .filter(|game| game.get_home_team().get_name() == "Bye"
-                    || game.get_away_team().get_name() == "Bye")
-                .count(),
-            2
-        );
+        assert_eq!(schedule.iter().filter(|game| game.is_bye()).count(), 2);
         assert_schedule(&schedule, &teams, season_config.number_fields());
     }
 
@@ -819,8 +816,7 @@ mod tests {
                 &None,
                 "single elimination does not support referees"
             );
-            let is_bye = game.get_home_team().get_name() == "Bye"
-                || game.get_away_team().get_name() == "Bye";
+            let is_bye = game.is_bye();
             assert_eq!(
                 is_bye,
                 index < number_of_byes,
@@ -830,7 +826,7 @@ mod tests {
 
         // Round 1 (the byes plus the first real pairing round) should
         // account for every input team exactly once, none dropped, none
-        // duplicated. Later rounds use placeholder names (e.g. "WinnerA"),
+        // duplicated. Later rounds use placeholder names (e.g. "Winner A"),
         // since the actual winners aren't known yet, so this only checks
         // round 1. Names aren't compared against the input teams directly,
         // since anonymous mode renames teams to "1".."N", so this only
@@ -861,7 +857,7 @@ mod tests {
 
         // Round 2 should seat every round-1 bye recipient exactly once
         // (identified directly from round 1's bye games), plus one
-        // "WinnerPrevious" placeholder per round-1 real game (the winner
+        // "Winner Previous" placeholder per round-1 real game (the winner
         // isn't known yet). No bye recipient should be missing, and none
         // should be paired against another bye recipient more than once.
         // A 2-team bracket has no round 2 at all (round 1's single game
@@ -907,12 +903,14 @@ mod tests {
                 "round 2 should not pair the same bye recipient more than once"
             );
             // A round-1 real game's still-undecided winner shows up in round
-            // 2 as either "WinnerPrevious" (paired against a known bye
-            // recipient) or "WinnerA"/"WinnerB" (paired against another
+            // 2 as either "Winner Previous" (paired against a known bye
+            // recipient) or "Winner A"/"Winner B" (paired against another
             // undecided winner), depending on how it's slotted.
             let unresolved_winner_count = round_2_names
                 .iter()
-                .filter(|&&name| name == "WinnerPrevious" || name == "WinnerA" || name == "WinnerB")
+                .filter(|&&name| {
+                    name == "Winner Previous" || name == "Winner A" || name == "Winner B"
+                })
                 .count();
             assert_eq!(
                 unresolved_winner_count, first_real_round_games,
@@ -922,8 +920,7 @@ mod tests {
 
         let mut games_per_time = HashMap::new();
         for game in schedule.iter() {
-            if game.get_home_team().get_name() != "Bye" && game.get_away_team().get_name() != "Bye"
-            {
+            if !game.is_bye() {
                 let game_time = game.get_game_time().unwrap();
                 let game_date = game.get_game_day();
                 let date_identifier = (game_time, *game_date);
