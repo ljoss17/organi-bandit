@@ -62,6 +62,10 @@ pub enum AppError {
     GameTimeSubtractionUnderflow(GameTime, GameTime),
     #[error("the next 10 dates starting from {0} are all excluded")]
     NoStartDate(NaiveDate),
+    #[error(
+        "team \"{0}\" is listed more than once with different seeds ({1} and {2}); give it a single seed or remove the duplicate entry"
+    )]
+    ConflictingTeamSeeds(String, u32, u32),
 }
 
 impl Serialize for AppError {
