@@ -26,10 +26,16 @@ impl<'a> GameTimeScheduler<'a> {
         // after the break), the subtraction underflows and there's nothing
         // to mirror — this side already is the reference window, so it just
         // keeps the real fixed boundary.
+        // With no break there is no window to mirror: both legs share one
+        // continuous run of slots, bounded only by the fixed hard stop.
         let leg_start_time = *leg_start_time;
-        let hard_stop = match *time_configuration.start_break() - leg_start_time {
-            Ok(duration) => *time_configuration.end_break() + duration,
-            Err(_) => Self::default_hard_stop(),
+        let hard_stop = if time_configuration.has_break() {
+            match *time_configuration.start_break() - leg_start_time {
+                Ok(duration) => *time_configuration.end_break() + duration,
+                Err(_) => Self::default_hard_stop(),
+            }
+        } else {
+            Self::default_hard_stop()
         };
 
         Self {
@@ -72,11 +78,15 @@ impl<'a> GameTimeScheduler<'a> {
             // it would still be running once the break starts — judged on
             // when the game ends, not just when it kicks off, so a game
             // can't overrun into the break by its own duration.
-            let starts_before_break_ends = next_time < *self.time_configuration.end_break();
-            let runs_past_break_start = next_time + *self.time_configuration.game_duration()
-                > *self.time_configuration.start_break();
-            if starts_before_break_ends && runs_past_break_start {
-                self.current_time = *self.time_configuration.end_break();
+            if self.time_configuration.has_break() {
+                let starts_before_break_ends = next_time < *self.time_configuration.end_break();
+                let runs_past_break_start = next_time + *self.time_configuration.game_duration()
+                    > *self.time_configuration.start_break();
+                if starts_before_break_ends && runs_past_break_start {
+                    self.current_time = *self.time_configuration.end_break();
+                } else {
+                    self.current_time = next_time;
+                }
             } else {
                 self.current_time = next_time;
             }

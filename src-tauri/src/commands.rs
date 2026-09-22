@@ -92,6 +92,7 @@ pub fn generate_excel_schedule(
         } else if current_time != Some(game_day.time()) {
             if current_time.map(GameTime::try_from).transpose()? < Some(start_break)
                 && GameTime::try_from(game_day.time())? >= end_break
+                && start_break != end_break
             {
                 row += 1;
                 write_break_row(

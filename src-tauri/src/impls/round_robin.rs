@@ -35,18 +35,21 @@ impl Tournament for RoundRobin {
             ));
         }
 
-        if time_configuration.start_time() >= time_configuration.start_break() {
-            return Err(AppError::StartTimeAfterStartBreak(
-                *time_configuration.start_time(),
-                *time_configuration.start_break(),
-            ));
-        }
+        // Only validate break times if they are configured
+        if time_configuration.start_break() != time_configuration.end_break() {
+            if time_configuration.start_time() >= time_configuration.start_break() {
+                return Err(AppError::StartTimeAfterStartBreak(
+                    *time_configuration.start_time(),
+                    *time_configuration.start_break(),
+                ));
+            }
 
-        if time_configuration.start_break() > time_configuration.end_break() {
-            return Err(AppError::StartBreakAfterEndBreak(
-                *time_configuration.start_break(),
-                *time_configuration.end_break(),
-            ));
+            if time_configuration.start_break() > time_configuration.end_break() {
+                return Err(AppError::StartBreakAfterEndBreak(
+                    *time_configuration.start_break(),
+                    *time_configuration.end_break(),
+                ));
+            }
         }
 
         // A zero-length game would leave every slot starting at the same
@@ -65,25 +68,16 @@ impl Tournament for RoundRobin {
             return Err(AppError::NotEnoughTeams(teams.len(), 4));
         }
 
-        // Both legs are structurally identical single-leg schedules (same
-        // circle-method logic, just a different shuffle), so they always
-        // need the same number of real games per round: teams.len() / 2
-        // (integer division holds whether the count is even or odd, the
-        // odd case's bye simply removes one team from that round before
-        // halving).
-        let games_per_leg = teams.len() as u32 / 2;
-        let slots_per_leg = games_per_leg.div_ceil(season_config.number_fields());
+        let slots_per_leg = Self::slots_per_leg(teams, season_config);
 
-        // Each leg needs to fit entirely on its own side of the break — one
-        // leg plays out before start_break, the other starts fresh at
-        // end_break — rather than the two legs packing together across the
-        // break however capacity happens to allow. So the binding
-        // constraint is whichever side has less room, not the day's total
-        // capacity (a config where both sides combined have enough slots
-        // but one side alone doesn't must still be rejected).
-        let slots_before_break = self.available_slots_before_break(time_configuration);
-        let slots_after_break = self.available_slots_after_break(time_configuration);
-        let available_slots = slots_before_break.min(slots_after_break);
+        let available_slots = if time_configuration.has_break() {
+            let before = self.available_slots_before_break(time_configuration);
+            let leg_b_start_time = Self::leg_b_start_time(time_configuration, slots_per_leg)?;
+            before.min(self.available_slots_after_break(time_configuration, &leg_b_start_time))
+        } else {
+            // The legs share one continuous run, so each gets at most half the day.
+            self.available_slots_before_break(time_configuration) / 2
+        };
         if slots_per_leg > available_slots {
             return Err(AppError::InsufficientDailyCapacity(
                 slots_per_leg,
@@ -103,6 +97,14 @@ impl Tournament for RoundRobin {
     ) -> Result<Vec<Game>, AppError> {
         // Validate parameters
         self.validate_parameters(teams, season_config)?;
+
+        // The second leg has to start where validate_parameters assumed it
+        // would, or the capacity it checked isn't the capacity used.
+        let leg_b_start_time = Self::leg_b_start_time(
+            season_config.time_configuration(),
+            Self::slots_per_leg(teams, season_config),
+        )?;
+
         let mut maybe_schedule = None;
         'outer: for _ in 0..100 {
             let pass_a = self.generate_single_game_schedule(
@@ -116,7 +118,7 @@ impl Tournament for RoundRobin {
                     teams,
                     start_date,
                     season_config,
-                    season_config.time_configuration().end_break(),
+                    &leg_b_start_time,
                 )?;
                 if let Some(schedule) = self.merge_schedules(pass_a.clone(), pass_b) {
                     maybe_schedule = Some(schedule);
@@ -295,19 +297,55 @@ impl RoundRobin {
         Ok(schedule_with_referee)
     }
 
-    // Counts how many distinct game-time slots fit in a single day for the
-    // configured start time, break window, and time-between-games spacing,
-    // stopping at the same fixed hard-stop boundary GameTimeScheduler itself
-    // enforces. Uses a probe scheduler with 1 field, since this counts
-    // distinct TIME VALUES only; field capacity is factored in separately by
-    // the caller.
-    // Counts the distinct game-time slots strictly before the configured
-    // break, using a probe scheduler with 1 field since this counts
-    // distinct TIME VALUES only; field capacity is factored in separately
-    // by the caller.
+    // How many distinct time slots one leg needs. Both legs are structurally
+    // identical single-leg schedules, so they always need the same number of
+    // real games per round (teams.len() / 2 — integer division holds whether
+    // the count is even or odd, the odd case's bye simply removes one team
+    // from that round before halving), and fields divide those games across
+    // each slot.
+    fn slots_per_leg(teams: &[Team], season_config: &SeasonConfig) -> u32 {
+        let games_per_leg = teams.len() as u32 / 2;
+        games_per_leg.div_ceil(season_config.number_fields())
+    }
+
+    // Where the second leg's clock starts each day.
+    //
+    // With a break, that is end_break: the break is what separates the two
+    // legs, and each leg gets its own mirrored window on its own side of it.
+    //
+    // With no break there is no divider, so the second leg starts in the
+    // first slot the first leg does not use — start_time advanced by exactly
+    // as many whole slots as one leg occupies. The two legs then run as one
+    // continuous block of games, spaced by the configured interval like any
+    // other consecutive pair.
+    fn leg_b_start_time(
+        time_configuration: &TimeConfiguration,
+        slots_per_leg: u32,
+    ) -> Result<GameTime, AppError> {
+        if time_configuration.has_break() {
+            return Ok(*time_configuration.end_break());
+        }
+
+        let interval = time_configuration.interval_between_games().as_minutes();
+        let start = time_configuration.start_time().as_minutes();
+        GameTime::from_minutes(start + interval * slots_per_leg)
+    }
+
+    // Counts the distinct game-time slots available to the first leg, using a
+    // probe scheduler with 1 field since this counts distinct TIME VALUES
+    // only; field capacity is factored in separately by the caller.
+    //
+    // With a break the leg is bounded by start_break, and a slot only counts
+    // if the game played in it finishes before the break begins. With no
+    // break the only bound is the scheduler's own hard stop, since the second
+    // leg is placed after this one rather than opposite it.
     fn available_slots_before_break(&self, time_configuration: &TimeConfiguration) -> u32 {
         let mut probe =
             GameTimeScheduler::new(time_configuration, time_configuration.start_time(), 1);
+
+        let boundary = time_configuration
+            .has_break()
+            .then(|| *time_configuration.start_break());
 
         let mut slots = 0u32;
         // Defensive iteration cap. validate_parameters rejects a zero game
@@ -316,10 +354,8 @@ impl RoundRobin {
         // on having been called after that check, and a zero interval would
         // otherwise spin here forever.
         for _ in 0..(24 * 60) {
-            // A slot only counts if the game played in it finishes before
-            // the break starts
             let game_ends = *probe.current_time() + *time_configuration.game_duration();
-            if probe.is_past_hard_stop() || game_ends > *time_configuration.start_break() {
+            if probe.is_past_hard_stop() || boundary.is_some_and(|limit| game_ends > limit) {
                 break;
             }
             slots += 1;
@@ -329,14 +365,14 @@ impl RoundRobin {
         slots
     }
 
-    // Counts the distinct game-time slots at or after the configured break,
-    // up to the same hard-stop boundary. The probe's clock starts directly
-    // at end_break rather than at the season's start_time, since a leg
-    // placed after the break always begins there, independent of how much
-    // room the pre-break leg actually used.
-    fn available_slots_after_break(&self, time_configuration: &TimeConfiguration) -> u32 {
-        let mut probe =
-            GameTimeScheduler::new(time_configuration, time_configuration.end_break(), 1);
+    // Counts the distinct game-time slots available to the second leg, from
+    // wherever that leg begins (see `leg_b_start_time`) up to the hard stop.
+    fn available_slots_after_break(
+        &self,
+        time_configuration: &TimeConfiguration,
+        leg_start_time: &GameTime,
+    ) -> u32 {
+        let mut probe = GameTimeScheduler::new(time_configuration, leg_start_time, 1);
 
         let mut slots = 0u32;
         for _ in 0..(24 * 60) {
@@ -566,7 +602,7 @@ mod tests {
     }
 
     #[test]
-    fn test_round_robin_parameter_validation_1() {
+    fn test_round_robin_parameter_validation() {
         let time_configuration = TimeConfiguration::new(
             GameTime::new(9, 0).unwrap(),
             GameTime::new(12, 0).unwrap(),
@@ -656,6 +692,29 @@ mod tests {
             GameTime::new(13, 0).unwrap(),
             GameTime::new(1, 0).unwrap(),
             GameTime::new(0, 0).unwrap(),
+        );
+        let date_configuration =
+            DateConfiguration::new(start_date(), vec![Weekday::Sat], vec![], false);
+        let season_config = SeasonConfig::new(time_configuration, date_configuration, 1);
+
+        let schedule = RoundRobin
+            .compute_schedule(&teams, &start_date(), &season_config, false)
+            .unwrap();
+
+        assert_schedule(&schedule, &teams, &start_date(), &season_config, false);
+    }
+
+    // Test case: no gap at all between games is legitimate — one game's
+    // kickoff can follow straight on from the previous game ending.
+    #[test]
+    fn compute_schedule_accepts_zero_time_break() {
+        let teams = many_teams(6);
+        let time_configuration = TimeConfiguration::new(
+            GameTime::new(9, 0).unwrap(),
+            GameTime::new(0, 0).unwrap(),
+            GameTime::new(0, 0).unwrap(),
+            GameTime::new(1, 0).unwrap(),
+            GameTime::new(0, 15).unwrap(),
         );
         let date_configuration =
             DateConfiguration::new(start_date(), vec![Weekday::Sat], vec![], false);
@@ -1181,10 +1240,22 @@ mod tests {
             }
         }
 
-        // A team's two games on a given day are never back-to-back: the
-        // season's break exists to give teams rest, so one game must fall
-        // strictly before the break starts and the other at or after it
-        // ends, never both on the same side of it.
+        // A team's two games on a given day fall one in each leg, never both
+        // in the same one. With a break configured that means one game
+        // strictly before it starts and the other at or after it ends, so the
+        // break gives every team its rest. With no break the two legs run
+        // back to back and the divider is simply where the second leg starts.
+        let leg_b_start = RoundRobin::leg_b_start_time(
+            time_configuration,
+            RoundRobin::slots_per_leg(teams, season_config),
+        )
+        .expect("the schedule was generated, so the leg boundary is a valid time");
+        let leg_a_limit = if time_configuration.has_break() {
+            *time_configuration.start_break()
+        } else {
+            leg_b_start
+        };
+
         for ((team, day), mut times) in team_daily_times {
             assert_eq!(
                 times.len(),
@@ -1194,9 +1265,8 @@ mod tests {
             );
             times.sort();
             assert!(
-                times[0] < *time_configuration.start_break()
-                    && times[1] >= *time_configuration.end_break(),
-                "team {team}'s games on {day} at {} and {} aren't separated by the break window",
+                times[0] < leg_a_limit && times[1] >= leg_b_start,
+                "team {team}'s games on {day} at {} and {} aren't split across the two legs",
                 times[0],
                 times[1]
             );

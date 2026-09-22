@@ -53,6 +53,10 @@ impl TimeConfiguration {
     pub fn end_break(&self) -> &GameTime {
         &self.end_break
     }
+
+    pub fn has_break(&self) -> bool {
+        self.start_break != self.end_break
+    }
 }
 
 #[cfg(test)]

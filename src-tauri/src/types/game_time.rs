@@ -75,6 +75,21 @@ impl GameTime {
     pub fn minute(&self) -> u8 {
         self.minute
     }
+
+    // Minutes since midnight. `Add` wraps at 24 hours and `Sub` refuses to go
+    // backwards, so arithmetic that has to detect running off the end of the
+    // day (rather than silently wrapping into the next one) works in minutes
+    // and comes back through `from_minutes`.
+    pub fn as_minutes(&self) -> u32 {
+        self.hour as u32 * 60 + self.minute as u32
+    }
+
+    // Errors rather than wrapping once the total passes 23:59.
+    pub fn from_minutes(total_minutes: u32) -> Result<Self, AppError> {
+        let hour = u8::try_from(total_minutes / 60)
+            .map_err(|_| AppError::InvalidTime(u8::MAX, (total_minutes % 60) as u8))?;
+        Self::new(hour, (total_minutes % 60) as u8)
+    }
 }
 
 #[cfg(test)]
