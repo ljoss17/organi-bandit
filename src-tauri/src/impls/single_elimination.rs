@@ -59,20 +59,27 @@ impl Tournament for SingleElimination {
         }
 
         // The day's play has to finish before midnight. The bracket fills a
-        // day and spills onto the next, so the bound that matters is the
-        // window after the break, which mirrors the one before it. GameTime
-        // addition wraps at 24h, so a window reaching midnight puts games in
-        // the small hours of the same day instead. The checks above
+        // day and spills onto the next, so with a break the bound that
+        // matters is the window after it, which mirrors the one before it.
+        // Without a break the bracket stops at the scheduler's own hard
+        // stop, and the only way off the end of the day is the first slot
+        // itself: reach the next one and every later slot has already been
+        // pushed onto the next day. GameTime addition wraps at 24h, so a
+        // window reaching midnight puts games in the small hours of the
+        // same day instead of on the day after. The break checks above
         // guarantee the subtraction is safe.
-        if time_configuration.has_break() {
-            let day_end = time_configuration.end_break().as_minutes()
+        let day_end = if time_configuration.has_break() {
+            time_configuration.end_break().as_minutes()
                 + (time_configuration.start_break().as_minutes()
-                    - time_configuration.start_time().as_minutes());
-            if day_end >= 24 * 60 {
-                return Err(AppError::ScheduleRunsPastMidnight(
-                    *time_configuration.start_time(),
-                ));
-            }
+                    - time_configuration.start_time().as_minutes())
+        } else {
+            time_configuration.start_time().as_minutes()
+                + time_configuration.interval_between_games().as_minutes()
+        };
+        if day_end >= 24 * 60 {
+            return Err(AppError::ScheduleRunsPastMidnight(
+                *time_configuration.start_time(),
+            ));
         }
         Ok(())
     }
@@ -341,6 +348,76 @@ mod tests {
             matches!(result, Err(AppError::ScheduleRunsPastMidnight(_))),
             "{result:?}"
         );
+    }
+
+    // Test case: a late start with no break at all. The second slot of the
+    // day would be 00:30, which GameTime addition renders as the small
+    // hours of the *same* date, so the bracket used to be produced with
+    // those games sitting before the ones they follow.
+    #[test]
+    fn validate_parameters_rejects_a_late_start_without_a_break() {
+        let time_configuration = TimeConfiguration::new(
+            GameTime::new(23, 30).unwrap(),
+            GameTime::new(0, 0).unwrap(),
+            GameTime::new(0, 0).unwrap(),
+            GameTime::new(0, 45).unwrap(),
+            GameTime::new(0, 15).unwrap(),
+        );
+        let date_configuration =
+            DateConfiguration::new(start_date(), vec![Weekday::Sat], vec![], false);
+        let season_config = SeasonConfig::new(time_configuration, date_configuration, 2);
+
+        let result = SingleElimination::new(false).validate_parameters(&teams(), &season_config);
+
+        assert!(
+            matches!(result, Err(AppError::ScheduleRunsPastMidnight(start)) if start == GameTime::new(23, 30).unwrap()),
+            "{result:?}"
+        );
+    }
+
+    // Test case: the slot after the first lands exactly on midnight, which
+    // GameTime addition renders as 00:00 — the start of the same day rather
+    // than the end of it, so it is no more usable than one that overshoots.
+    #[test]
+    fn validate_parameters_rejects_a_slot_landing_exactly_at_midnight_without_a_break() {
+        let time_configuration = TimeConfiguration::new(
+            GameTime::new(23, 0).unwrap(),
+            GameTime::new(0, 0).unwrap(),
+            GameTime::new(0, 0).unwrap(),
+            GameTime::new(0, 45).unwrap(),
+            GameTime::new(0, 15).unwrap(),
+        );
+        let date_configuration =
+            DateConfiguration::new(start_date(), vec![Weekday::Sat], vec![], false);
+        let season_config = SeasonConfig::new(time_configuration, date_configuration, 2);
+
+        let result = SingleElimination::new(false).validate_parameters(&teams(), &season_config);
+
+        assert!(
+            matches!(result, Err(AppError::ScheduleRunsPastMidnight(_))),
+            "{result:?}"
+        );
+    }
+
+    // An evening start is fine on its own: the scheduler's hard stop pushes
+    // what does not fit onto the next day, and nothing wraps as long as the
+    // slot after the first still falls inside the day.
+    #[test]
+    fn validate_parameters_accepts_an_evening_start_without_a_break() {
+        let time_configuration = TimeConfiguration::new(
+            GameTime::new(20, 0).unwrap(),
+            GameTime::new(0, 0).unwrap(),
+            GameTime::new(0, 0).unwrap(),
+            GameTime::new(0, 45).unwrap(),
+            GameTime::new(0, 15).unwrap(),
+        );
+        let date_configuration =
+            DateConfiguration::new(start_date(), vec![Weekday::Sat], vec![], false);
+        let season_config = SeasonConfig::new(time_configuration, date_configuration, 2);
+
+        let result = SingleElimination::new(false).validate_parameters(&teams(), &season_config);
+
+        assert!(result.is_ok(), "{result:?}");
     }
 
     #[test]
