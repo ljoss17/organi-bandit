@@ -56,11 +56,12 @@ impl Team {
         })
     }
 
-    // Title-cases the name and refuses the one reserved for byes.
+    // Title-cases the name and refuses the one reserved for byes, as well
+    // as a name that is nothing but whitespace.
     fn parse_name(name: &str) -> Result<String, AppError> {
         let parsed_name = name
             .to_lowercase()
-            .split(' ')
+            .split_whitespace()
             .map(|word| {
                 let mut chars = word.chars();
                 match chars.next() {
@@ -71,7 +72,7 @@ impl Team {
             .collect::<Vec<String>>()
             .join(" ");
 
-        if parsed_name == Self::BYE_NAME {
+        if parsed_name.is_empty() || parsed_name == Self::BYE_NAME {
             return Err(AppError::InvalidTeamName(name.to_string()));
         }
         Ok(parsed_name)
@@ -127,6 +128,37 @@ mod tests {
         assert!(team_7.is_err(), "team name 'bYE' should be rejected");
         let team_8 = Team::new("BYE", None);
         assert!(team_8.is_err(), "team name 'BYE' should be rejected");
+    }
+
+    #[test]
+    fn test_trim_and_collapse_whitespace_in_team_name() {
+        let team_1 = Team::new("  morges bandits  ", None).unwrap();
+        assert_eq!(team_1.get_name(), "Morges Bandits");
+        let team_2 = Team::new("morges   bandits", None).unwrap();
+        assert_eq!(team_2.get_name(), "Morges Bandits");
+        let team_3 = Team::new("\tmorges\nbandits ", None).unwrap();
+        assert_eq!(team_3.get_name(), "Morges Bandits");
+    }
+
+    // The reserved name is checked after the whitespace is normalised, so
+    // padding it cannot smuggle a bye-named team into the list.
+    #[test]
+    fn test_reject_bye_named_teams_surrounded_by_whitespace() {
+        for name in [" bye", "bye ", " Bye ", "BYE  ", "\tbye\n"] {
+            let team = Team::new(name, None);
+            assert!(team.is_err(), "team name {name:?} should be rejected");
+        }
+    }
+
+    #[test]
+    fn test_reject_blank_team_names() {
+        let team_1 = Team::new("", None);
+        assert!(team_1.is_err(), "an empty team name should be rejected");
+        let team_2 = Team::new("   ", None);
+        assert!(
+            team_2.is_err(),
+            "a whitespace-only team name should be rejected"
+        );
     }
 
     #[test]

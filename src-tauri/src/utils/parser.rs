@@ -110,6 +110,22 @@ mod tests {
         );
     }
 
+    // The names are normalised before they reach here, so an entry that
+    // only differs by its padding is an exact repeat and gets dropped
+    // rather than scheduled as a second team with the same name.
+    #[test]
+    fn deduplicate_teams_drops_a_repeat_that_only_differs_by_whitespace() {
+        let teams = vec![
+            team("Morges Bandits", None),
+            team("  morges bandits ", None),
+            team("Morges   Bandits", None),
+        ];
+
+        let deduplicated = deduplicate_teams(teams).unwrap();
+
+        assert_eq!(deduplicated, vec![team("Morges Bandits", None)]);
+    }
+
     // An absent seed and a seed of 0 mean the same thing, so these are the
     // same team rather than a conflict. The first entry is the one kept.
     #[test]
