@@ -70,6 +70,28 @@ impl Tournament for RoundRobin {
 
         let slots_per_leg = Self::slots_per_leg(teams, season_config);
 
+        // The day's play has to finish before midnight. With a break, the
+        // leg after it mirrors the leg before it and so ends at
+        // end_break + (start_break - start_time); without one, both legs
+        // run on from start_time. GameTime addition wraps at 24h, so a
+        // window reaching midnight lands in the small hours instead and
+        // reads as "0 slots available" rather than as the misconfiguration
+        // it is. The break checks above guarantee the subtraction is safe.
+        let day_end = if time_configuration.has_break() {
+            time_configuration.end_break().as_minutes()
+                + (time_configuration.start_break().as_minutes()
+                    - time_configuration.start_time().as_minutes())
+        } else {
+            time_configuration.start_time().as_minutes()
+                + time_configuration.interval_between_games().as_minutes() * (2 * slots_per_leg - 1)
+                + time_configuration.game_duration().as_minutes()
+        };
+        if day_end >= 24 * 60 {
+            return Err(AppError::ScheduleRunsPastMidnight(
+                *time_configuration.start_time(),
+            ));
+        }
+
         let available_slots = if time_configuration.has_break() {
             let before = self.available_slots_before_break(time_configuration);
             let leg_b_start_time = Self::leg_b_start_time(time_configuration, slots_per_leg)?;
@@ -752,6 +774,83 @@ mod tests {
             result,
             Err(AppError::InsufficientDailyCapacity(4, 3))
         ));
+    }
+
+    // Test case: an evening start with no break. Two legs of 3 slots an
+    // hour apart from 20:00 would need until 01:00 the next day, which the
+    // schedule has no way to express.
+    #[test]
+    fn compute_schedule_rejects_a_day_running_past_midnight() {
+        let teams = many_teams(6);
+        let time_configuration = TimeConfiguration::new(
+            GameTime::new(20, 0).unwrap(),
+            GameTime::new(12, 0).unwrap(),
+            GameTime::new(12, 0).unwrap(),
+            GameTime::new(1, 0).unwrap(),
+            GameTime::new(0, 0).unwrap(),
+        );
+        let date_configuration =
+            DateConfiguration::new(start_date(), vec![Weekday::Sat], vec![], false);
+        let season_config = SeasonConfig::new(time_configuration, date_configuration, 1);
+
+        let result = RoundRobin.compute_schedule(&teams, &start_date(), &season_config, false);
+
+        assert!(
+            matches!(result, Err(AppError::ScheduleRunsPastMidnight(start)) if start == GameTime::new(20, 0).unwrap()),
+            "{result:?}"
+        );
+    }
+
+    // Test case: a sane 09:00 start, but a break ending at 23:30 pushes the
+    // mirrored window past the end of the day. This used to be reported as
+    // "0 slots available", because the hard stop wrapped round into the
+    // small hours and so sat before the day's play had even started.
+    #[test]
+    fn compute_schedule_rejects_a_break_ending_too_late_in_the_day() {
+        let teams = many_teams(6);
+        let time_configuration = TimeConfiguration::new(
+            GameTime::new(9, 0).unwrap(),
+            GameTime::new(12, 0).unwrap(),
+            GameTime::new(23, 30).unwrap(),
+            GameTime::new(1, 0).unwrap(),
+            GameTime::new(0, 0).unwrap(),
+        );
+        let date_configuration =
+            DateConfiguration::new(start_date(), vec![Weekday::Sat], vec![], false);
+        let season_config = SeasonConfig::new(time_configuration, date_configuration, 3);
+
+        let result = RoundRobin.compute_schedule(&teams, &start_date(), &season_config, false);
+
+        assert!(
+            matches!(result, Err(AppError::ScheduleRunsPastMidnight(_))),
+            "{result:?}"
+        );
+    }
+
+    // Test case: a window landing exactly on midnight is rejected too. The
+    // hard stop would be 24:00, which GameTime addition renders as 00:00 —
+    // before the day's play rather than after it, so it is no more usable
+    // than a window that overshoots.
+    #[test]
+    fn validate_parameters_rejects_a_day_ending_exactly_at_midnight() {
+        let teams = many_teams(6);
+        let time_configuration = TimeConfiguration::new(
+            GameTime::new(9, 0).unwrap(),
+            GameTime::new(12, 0).unwrap(),
+            GameTime::new(21, 0).unwrap(),
+            GameTime::new(1, 0).unwrap(),
+            GameTime::new(0, 0).unwrap(),
+        );
+        let date_configuration =
+            DateConfiguration::new(start_date(), vec![Weekday::Sat], vec![], false);
+        let season_config = SeasonConfig::new(time_configuration, date_configuration, 3);
+
+        let result = RoundRobin.validate_parameters(&teams, &season_config);
+
+        assert!(
+            matches!(result, Err(AppError::ScheduleRunsPastMidnight(_))),
+            "{result:?}"
+        );
     }
 
     // Test case: referees requested with too few eligible teams to cover a

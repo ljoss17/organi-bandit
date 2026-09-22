@@ -60,6 +60,10 @@ pub enum AppError {
     InsufficientDailyCapacity(u32, u32),
     #[error("cannot subtract {1} from {0}: {1} is later in the day than {0}")]
     GameTimeSubtractionUnderflow(GameTime, GameTime),
+    #[error(
+        "the games configured for each day do not fit before midnight when play starts at {0}; start earlier, shorten the games or the break, add fields, or reduce the time between games"
+    )]
+    ScheduleRunsPastMidnight(GameTime),
     #[error("the next 10 dates starting from {0} are all excluded")]
     NoStartDate(NaiveDate),
     #[error(

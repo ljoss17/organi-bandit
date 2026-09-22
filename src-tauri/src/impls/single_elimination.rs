@@ -57,6 +57,23 @@ impl Tournament for SingleElimination {
                 ));
             }
         }
+
+        // The day's play has to finish before midnight. The bracket fills a
+        // day and spills onto the next, so the bound that matters is the
+        // window after the break, which mirrors the one before it. GameTime
+        // addition wraps at 24h, so a window reaching midnight puts games in
+        // the small hours of the same day instead. The checks above
+        // guarantee the subtraction is safe.
+        if time_configuration.has_break() {
+            let day_end = time_configuration.end_break().as_minutes()
+                + (time_configuration.start_break().as_minutes()
+                    - time_configuration.start_time().as_minutes());
+            if day_end >= 24 * 60 {
+                return Err(AppError::ScheduleRunsPastMidnight(
+                    *time_configuration.start_time(),
+                ));
+            }
+        }
         Ok(())
     }
 
@@ -300,6 +317,30 @@ mod tests {
         let result = single_elimination.validate_parameters(&teams(), &season_config);
 
         assert!(result.is_ok(), "passed parameters should be valid");
+    }
+
+    // Test case: a break ending at 23:30 leaves the window after it running
+    // past the end of the day. Without this check the bracket was still
+    // produced, one game per day, silently spread over weeks.
+    #[test]
+    fn validate_parameters_rejects_a_break_ending_too_late_in_the_day() {
+        let time_configuration = TimeConfiguration::new(
+            GameTime::new(9, 0).unwrap(),
+            GameTime::new(12, 0).unwrap(),
+            GameTime::new(23, 30).unwrap(),
+            GameTime::new(1, 0).unwrap(),
+            GameTime::new(0, 30).unwrap(),
+        );
+        let date_configuration =
+            DateConfiguration::new(start_date(), vec![Weekday::Sat], vec![], false);
+        let season_config = SeasonConfig::new(time_configuration, date_configuration, 1);
+
+        let result = SingleElimination::new(false).validate_parameters(&teams(), &season_config);
+
+        assert!(
+            matches!(result, Err(AppError::ScheduleRunsPastMidnight(_))),
+            "{result:?}"
+        );
     }
 
     #[test]
