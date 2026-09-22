@@ -26,6 +26,7 @@ impl Tournament for SingleElimination {
         teams: &[Team],
         season_config: &SeasonConfig,
     ) -> Result<(), AppError> {
+        let time_configuration = season_config.time_configuration();
         if teams.len() < 2 {
             return Err(AppError::NotEnoughTeams(teams.len(), 2));
         }
@@ -36,8 +37,25 @@ impl Tournament for SingleElimination {
         // A zero-length game would leave every slot starting at the same
         // time, so the bracket could never advance. The gap after a game may
         // legitimately be zero, the game itself cannot.
-        if season_config.time_configuration().game_duration() == &GameTime::new(0, 0)? {
+        if time_configuration.game_duration() == &GameTime::new(0, 0)? {
             return Err(AppError::ZeroGameDuration);
+        }
+
+        // Only validate break times if they are configured
+        if time_configuration.start_break() != time_configuration.end_break() {
+            if time_configuration.start_time() >= time_configuration.start_break() {
+                return Err(AppError::StartTimeAfterStartBreak(
+                    *time_configuration.start_time(),
+                    *time_configuration.start_break(),
+                ));
+            }
+
+            if time_configuration.start_break() > time_configuration.end_break() {
+                return Err(AppError::StartBreakAfterEndBreak(
+                    *time_configuration.start_break(),
+                    *time_configuration.end_break(),
+                ));
+            }
         }
         Ok(())
     }
