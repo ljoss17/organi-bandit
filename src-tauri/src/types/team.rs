@@ -1,17 +1,63 @@
-use serde::{Deserialize, Serialize};
+use serde::de;
+use serde::ser::SerializeStruct;
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use crate::errors::AppError;
 
-#[derive(Clone, Debug, Default, Eq, Hash, Serialize, Deserialize, PartialEq)]
+#[derive(Clone, Debug, Default, Eq, Hash, PartialEq)]
 pub struct Team {
     name: String,
     seed: Option<u32>,
+}
+
+// A bye is written as null: it has no identity of its own, and keeping the
+// reserved name off the wire is what lets the deserialiser below refuse it.
+impl Serialize for Team {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        if self.is_bye() {
+            return serializer.serialize_none();
+        }
+        let mut team = serializer.serialize_struct("Team", 2)?;
+        team.serialize_field("name", &self.name)?;
+        team.serialize_field("seed", &self.seed)?;
+        team.end()
+    }
+}
+
+// Use Team::new() to validate data before deserializing
+impl<'de> Deserialize<'de> for Team {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        struct Fields {
+            name: String,
+            seed: Option<u32>,
+        }
+
+        match Option::<Fields>::deserialize(deserializer)? {
+            None => Ok(Self::bye()),
+            Some(fields) => Self::new(&fields.name, fields.seed).map_err(de::Error::custom),
+        }
+    }
 }
 
 impl Team {
     pub const BYE_NAME: &'static str = "Bye";
 
     pub fn new(name: &str, seed: Option<u32>) -> Result<Self, AppError> {
+        Ok(Self {
+            name: Self::parse_name(name)?,
+            seed,
+        })
+    }
+
+    // Title-cases the name and refuses the one reserved for byes.
+    fn parse_name(name: &str) -> Result<String, AppError> {
         let parsed_name = name
             .to_lowercase()
             .split(' ')
@@ -28,10 +74,7 @@ impl Team {
         if parsed_name == Self::BYE_NAME {
             return Err(AppError::InvalidTeamName(name.to_string()));
         }
-        Ok(Self {
-            name: parsed_name,
-            seed,
-        })
+        Ok(parsed_name)
     }
 
     pub fn bye() -> Self {

@@ -14,7 +14,7 @@ use crate::types::game_time::GameTime;
 pub enum AppError {
     #[error("failed to read file")]
     ReadError(#[from] IoError),
-    #[error("failed to deserialise data")]
+    #[error("failed to deserialise data: {0}")]
     DeserializeError(#[from] SerdeError),
     #[error("failed to find game")]
     MissingGame,
