@@ -350,6 +350,80 @@ mod tests {
         );
     }
 
+    // Test case: the break sits before play even starts, so the bracket
+    // has nowhere to place its first round. This used to be reported as
+    // "0 slots available", since the window before the break was already
+    // over.
+    #[test]
+    fn validate_parameters_rejects_a_break_starting_before_the_day_does() {
+        let time_configuration = TimeConfiguration::new(
+            GameTime::new(9, 0).unwrap(),
+            GameTime::new(8, 0).unwrap(),
+            GameTime::new(8, 30).unwrap(),
+            GameTime::new(1, 0).unwrap(),
+            GameTime::new(0, 30).unwrap(),
+        );
+        let date_configuration =
+            DateConfiguration::new(start_date(), vec![Weekday::Sat], vec![], false);
+        let season_config = SeasonConfig::new(time_configuration, date_configuration, 1);
+
+        let result = SingleElimination::new(false).validate_parameters(&teams(), &season_config);
+
+        assert!(
+            matches!(result, Err(AppError::StartTimeAfterStartBreak(start, break_start))
+                if start == GameTime::new(9, 0).unwrap()
+                    && break_start == GameTime::new(8, 0).unwrap()),
+            "{result:?}"
+        );
+    }
+
+    // Test case: a break opening the moment play does is rejected too —
+    // the window before it would have no room at all, not merely too
+    // little.
+    #[test]
+    fn validate_parameters_rejects_a_break_starting_when_the_day_does() {
+        let time_configuration = TimeConfiguration::new(
+            GameTime::new(12, 0).unwrap(),
+            GameTime::new(12, 0).unwrap(),
+            GameTime::new(13, 0).unwrap(),
+            GameTime::new(1, 0).unwrap(),
+            GameTime::new(0, 30).unwrap(),
+        );
+        let date_configuration =
+            DateConfiguration::new(start_date(), vec![Weekday::Sat], vec![], false);
+        let season_config = SeasonConfig::new(time_configuration, date_configuration, 1);
+
+        let result = SingleElimination::new(false).validate_parameters(&teams(), &season_config);
+
+        assert!(
+            matches!(result, Err(AppError::StartTimeAfterStartBreak(..))),
+            "{result:?}"
+        );
+    }
+
+    #[test]
+    fn validate_parameters_rejects_a_break_that_ends_before_it_starts() {
+        let time_configuration = TimeConfiguration::new(
+            GameTime::new(9, 0).unwrap(),
+            GameTime::new(14, 0).unwrap(),
+            GameTime::new(12, 0).unwrap(),
+            GameTime::new(1, 0).unwrap(),
+            GameTime::new(0, 30).unwrap(),
+        );
+        let date_configuration =
+            DateConfiguration::new(start_date(), vec![Weekday::Sat], vec![], false);
+        let season_config = SeasonConfig::new(time_configuration, date_configuration, 1);
+
+        let result = SingleElimination::new(false).validate_parameters(&teams(), &season_config);
+
+        assert!(
+            matches!(result, Err(AppError::StartBreakAfterEndBreak(break_start, break_end))
+                if break_start == GameTime::new(14, 0).unwrap()
+                    && break_end == GameTime::new(12, 0).unwrap()),
+            "{result:?}"
+        );
+    }
+
     // Test case: a late start with no break at all. The second slot of the
     // day would be 00:30, which GameTime addition renders as the small
     // hours of the *same* date, so the bracket used to be produced with
