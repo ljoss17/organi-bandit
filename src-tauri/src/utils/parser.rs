@@ -52,15 +52,21 @@ fn deduplicate_teams(teams: Vec<Team>) -> Result<Vec<Team>, AppError> {
     Ok(unique)
 }
 
+// The list is deduplicated on the way out as well as on the way in, so the
+// editor cannot leave behind a file that the read path then refuses to load.
+// A conflicting seed is reported before anything is written, leaving the
+// previous file untouched.
 #[tauri::command]
 pub fn write_team_list(file_path: &Path, new_teams: Vec<Team>) -> Result<(), AppError> {
-    let serialised_teams = serde_json::to_string(&new_teams)?;
+    let serialised_teams = serde_json::to_string(&deduplicate_teams(new_teams)?)?;
     fs::write(file_path, &serialised_teams)?;
     Ok(())
 }
 
 #[cfg(test)]
 mod tests {
+    use std::path::PathBuf;
+
     use super::*;
 
     #[test]
@@ -174,5 +180,50 @@ mod tests {
     #[test]
     fn deduplicate_teams_accepts_an_empty_list() {
         assert!(deduplicate_teams(vec![]).unwrap().is_empty());
+    }
+
+    fn temp_team_file(name: &str) -> PathBuf {
+        std::env::temp_dir().join(format!("organi-bandit-test-{name}.json"))
+    }
+
+    #[test]
+    fn write_team_list_drops_a_repeated_team() {
+        let file_path = temp_team_file("write-repeated-team");
+        let teams = vec![
+            team("Morges Bandits", None),
+            team("  morges bandits ", None),
+            team("Yverdon Ducs", Some(3)),
+        ];
+
+        write_team_list(&file_path, teams).expect("writing should succeed");
+
+        let written = read_team_list(&file_path).expect("the written file should read back");
+        assert_eq!(
+            written,
+            vec![team("Morges Bandits", None), team("Yverdon Ducs", Some(3))]
+        );
+    }
+
+    // The previous list is worth more than a half-saved one, so a conflict
+    // has to be caught before the file is touched.
+    #[test]
+    fn write_team_list_refuses_conflicting_seeds_without_writing() {
+        let file_path = temp_team_file("write-conflicting-seeds");
+        write_team_list(&file_path, vec![team("Morges Bandits", Some(1))])
+            .expect("writing should succeed");
+
+        let result = write_team_list(
+            &file_path,
+            vec![
+                team("Morges Bandits", Some(1)),
+                team("Morges Bandits", Some(2)),
+            ],
+        );
+
+        assert!(matches!(result, Err(AppError::ConflictingTeamSeeds(..))));
+        assert_eq!(
+            read_team_list(&file_path).expect("the earlier file should still read back"),
+            vec![team("Morges Bandits", Some(1))]
+        );
     }
 }
