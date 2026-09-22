@@ -53,6 +53,10 @@ impl TimeConfiguration {
     pub fn end_break(&self) -> &GameTime {
         &self.end_break
     }
+
+    pub fn has_break(&self) -> bool {
+        self.start_break != self.end_break
+    }
 }
 
 #[cfg(test)]
@@ -126,6 +130,23 @@ mod tests {
             configuration.time_between_games(),
             &GameTime::new(0, 30).unwrap()
         );
+    }
+
+    // An out-of-range time is refused where the payload is read, rather
+    // than being carried into the schedule as an impossible kick-off.
+    #[test]
+    fn refuses_a_payload_carrying_an_out_of_range_time() {
+        let payload = r#"{
+            "startTime": {"hour": 99, "minute": 0},
+            "startBreak": {"hour": 12, "minute": 0},
+            "endBreak": {"hour": 13, "minute": 0},
+            "gameDuration": {"hour": 1, "minute": 0},
+            "timeBetweenGames": {"hour": 0, "minute": 30}
+        }"#;
+
+        let result = serde_json::from_str::<TimeConfiguration>(payload);
+
+        assert!(result.is_err(), "hour 99 should be rejected");
     }
 
     #[test]

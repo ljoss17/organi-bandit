@@ -26,6 +26,7 @@ impl Tournament for SingleElimination {
         teams: &[Team],
         season_config: &SeasonConfig,
     ) -> Result<(), AppError> {
+        let time_configuration = season_config.time_configuration();
         if teams.len() < 2 {
             return Err(AppError::NotEnoughTeams(teams.len(), 2));
         }
@@ -36,8 +37,49 @@ impl Tournament for SingleElimination {
         // A zero-length game would leave every slot starting at the same
         // time, so the bracket could never advance. The gap after a game may
         // legitimately be zero, the game itself cannot.
-        if season_config.time_configuration().game_duration() == &GameTime::new(0, 0)? {
+        if time_configuration.game_duration() == &GameTime::new(0, 0)? {
             return Err(AppError::ZeroGameDuration);
+        }
+
+        // Only validate break times if they are configured
+        if time_configuration.start_break() != time_configuration.end_break() {
+            if time_configuration.start_time() >= time_configuration.start_break() {
+                return Err(AppError::StartTimeAfterStartBreak(
+                    *time_configuration.start_time(),
+                    *time_configuration.start_break(),
+                ));
+            }
+
+            if time_configuration.start_break() > time_configuration.end_break() {
+                return Err(AppError::StartBreakAfterEndBreak(
+                    *time_configuration.start_break(),
+                    *time_configuration.end_break(),
+                ));
+            }
+        }
+
+        // The day's play has to finish before midnight. The bracket fills a
+        // day and spills onto the next, so with a break the bound that
+        // matters is the window after it, which mirrors the one before it.
+        // Without a break the bracket stops at the scheduler's own hard
+        // stop, and the only way off the end of the day is the first slot
+        // itself: reach the next one and every later slot has already been
+        // pushed onto the next day. GameTime addition wraps at 24h, so a
+        // window reaching midnight puts games in the small hours of the
+        // same day instead of on the day after. The break checks above
+        // guarantee the subtraction is safe.
+        let day_end = if time_configuration.has_break() {
+            time_configuration.end_break().as_minutes()
+                + (time_configuration.start_break().as_minutes()
+                    - time_configuration.start_time().as_minutes())
+        } else {
+            time_configuration.start_time().as_minutes()
+                + time_configuration.interval_between_games().as_minutes()
+        };
+        if day_end >= 24 * 60 {
+            return Err(AppError::ScheduleRunsPastMidnight(
+                *time_configuration.start_time(),
+            ));
         }
         Ok(())
     }
@@ -65,7 +107,7 @@ impl Tournament for SingleElimination {
                         Some(number_of_teams as u32 - value as u32),
                     )
                 })
-                .collect::<Vec<_>>()
+                .collect::<Result<Vec<_>, _>>()?
         } else {
             let mut inner = teams.to_vec();
             inner.sort_by_key(|team| team.get_seed());
@@ -85,7 +127,7 @@ impl Tournament for SingleElimination {
         let bye_time = GameTime::new(0, 0)?;
         for i in 0..number_of_byes {
             let home_team = inner_teams[i].clone();
-            let bye_team = Team::new("Bye", None);
+            let bye_team = Team::bye();
 
             let game = Game::new_with_game_day(
                 home_team,
@@ -126,7 +168,7 @@ impl Tournament for SingleElimination {
         // Compute the second round of single elimination, taking into account first round bye weeks.
         // Bye recipients from round 1 are paired against each other two at a time. An odd one out
         // (when number_of_byes is odd) plays the still-undecided winner of a round-1 real game. Any
-        // round-1 real games left over after that play each other, using the same WinnerA/WinnerB
+        // round-1 real games left over after that play each other, using the same Winner A/Winner B
         // placeholder names later rounds use, since neither side is known yet.
         let bye_recipients = &inner_teams[..number_of_byes];
         let bye_recipient_pairs = bye_recipients.as_chunks::<2>();
@@ -151,7 +193,7 @@ impl Tournament for SingleElimination {
         if let [leftover_bye_recipient] = bye_recipient_pairs.1 {
             game_day_scheduler.advance_if_past_hard_stop(&mut game_time_scheduler)?;
             let home_team = leftover_bye_recipient.clone();
-            let away_team = Team::new("WinnerPrevious", None);
+            let away_team = Team::new("Winner Previous", None)?;
             let game_time = *game_time_scheduler.current_time();
             let game = Game::new_with_game_day(
                 home_team,
@@ -168,8 +210,8 @@ impl Tournament for SingleElimination {
 
         for _ in 0..winner_previous_slots / 2 {
             game_day_scheduler.advance_if_past_hard_stop(&mut game_time_scheduler)?;
-            let home_team = Team::new("WinnerA", None);
-            let away_team = Team::new("WinnerB", None);
+            let home_team = Team::new("Winner A", None)?;
+            let away_team = Team::new("Winner B", None)?;
             let game_time = *game_time_scheduler.current_time();
             let game = Game::new_with_game_day(
                 home_team,
@@ -196,8 +238,8 @@ impl Tournament for SingleElimination {
             for _ in 0..number_of_games {
                 game_day_scheduler.advance_if_past_hard_stop(&mut game_time_scheduler)?;
                 let game_time = *game_time_scheduler.current_time();
-                let home_team = Team::new("WinnerA", None);
-                let away_team = Team::new("WinnerB", None);
+                let home_team = Team::new("Winner A", None)?;
+                let away_team = Team::new("Winner B", None)?;
                 let game = Game::new_with_game_day(
                     home_team,
                     away_team,
@@ -243,25 +285,25 @@ mod tests {
 
     fn teams() -> [Team; 5] {
         [
-            Team::new("Morges Bandits", None),
-            Team::new("Yverdon Ducs", None),
-            Team::new("Lausanne Rockets", None),
-            Team::new("Team A", None),
-            Team::new("Team B", None),
+            Team::new("Morges Bandits", None).unwrap(),
+            Team::new("Yverdon Ducs", None).unwrap(),
+            Team::new("Lausanne Rockets", None).unwrap(),
+            Team::new("Team A", None).unwrap(),
+            Team::new("Team B", None).unwrap(),
         ]
     }
 
     fn teams_bigger() -> [Team; 9] {
         [
-            Team::new("Morges Bandits", None),
-            Team::new("Yverdon Ducs", None),
-            Team::new("Lausanne Rockets", None),
-            Team::new("Team A", None),
-            Team::new("Team B", None),
-            Team::new("Team C", None),
-            Team::new("Team D", None),
-            Team::new("Team E", None),
-            Team::new("Team F", None),
+            Team::new("Morges Bandits", None).unwrap(),
+            Team::new("Yverdon Ducs", None).unwrap(),
+            Team::new("Lausanne Rockets", None).unwrap(),
+            Team::new("Team A", None).unwrap(),
+            Team::new("Team B", None).unwrap(),
+            Team::new("Team C", None).unwrap(),
+            Team::new("Team D", None).unwrap(),
+            Team::new("Team E", None).unwrap(),
+            Team::new("Team F", None).unwrap(),
         ]
     }
 
@@ -284,6 +326,174 @@ mod tests {
         assert!(result.is_ok(), "passed parameters should be valid");
     }
 
+    // Test case: a break ending at 23:30 leaves the window after it running
+    // past the end of the day. Without this check the bracket was still
+    // produced, one game per day, silently spread over weeks.
+    #[test]
+    fn validate_parameters_rejects_a_break_ending_too_late_in_the_day() {
+        let time_configuration = TimeConfiguration::new(
+            GameTime::new(9, 0).unwrap(),
+            GameTime::new(12, 0).unwrap(),
+            GameTime::new(23, 30).unwrap(),
+            GameTime::new(1, 0).unwrap(),
+            GameTime::new(0, 30).unwrap(),
+        );
+        let date_configuration =
+            DateConfiguration::new(start_date(), vec![Weekday::Sat], vec![], false);
+        let season_config = SeasonConfig::new(time_configuration, date_configuration, 1);
+
+        let result = SingleElimination::new(false).validate_parameters(&teams(), &season_config);
+
+        assert!(
+            matches!(result, Err(AppError::ScheduleRunsPastMidnight(_))),
+            "{result:?}"
+        );
+    }
+
+    // Test case: the break sits before play even starts, so the bracket
+    // has nowhere to place its first round. This used to be reported as
+    // "0 slots available", since the window before the break was already
+    // over.
+    #[test]
+    fn validate_parameters_rejects_a_break_starting_before_the_day_does() {
+        let time_configuration = TimeConfiguration::new(
+            GameTime::new(9, 0).unwrap(),
+            GameTime::new(8, 0).unwrap(),
+            GameTime::new(8, 30).unwrap(),
+            GameTime::new(1, 0).unwrap(),
+            GameTime::new(0, 30).unwrap(),
+        );
+        let date_configuration =
+            DateConfiguration::new(start_date(), vec![Weekday::Sat], vec![], false);
+        let season_config = SeasonConfig::new(time_configuration, date_configuration, 1);
+
+        let result = SingleElimination::new(false).validate_parameters(&teams(), &season_config);
+
+        assert!(
+            matches!(result, Err(AppError::StartTimeAfterStartBreak(start, break_start))
+                if start == GameTime::new(9, 0).unwrap()
+                    && break_start == GameTime::new(8, 0).unwrap()),
+            "{result:?}"
+        );
+    }
+
+    // Test case: a break opening the moment play does is rejected too —
+    // the window before it would have no room at all, not merely too
+    // little.
+    #[test]
+    fn validate_parameters_rejects_a_break_starting_when_the_day_does() {
+        let time_configuration = TimeConfiguration::new(
+            GameTime::new(12, 0).unwrap(),
+            GameTime::new(12, 0).unwrap(),
+            GameTime::new(13, 0).unwrap(),
+            GameTime::new(1, 0).unwrap(),
+            GameTime::new(0, 30).unwrap(),
+        );
+        let date_configuration =
+            DateConfiguration::new(start_date(), vec![Weekday::Sat], vec![], false);
+        let season_config = SeasonConfig::new(time_configuration, date_configuration, 1);
+
+        let result = SingleElimination::new(false).validate_parameters(&teams(), &season_config);
+
+        assert!(
+            matches!(result, Err(AppError::StartTimeAfterStartBreak(..))),
+            "{result:?}"
+        );
+    }
+
+    #[test]
+    fn validate_parameters_rejects_a_break_that_ends_before_it_starts() {
+        let time_configuration = TimeConfiguration::new(
+            GameTime::new(9, 0).unwrap(),
+            GameTime::new(14, 0).unwrap(),
+            GameTime::new(12, 0).unwrap(),
+            GameTime::new(1, 0).unwrap(),
+            GameTime::new(0, 30).unwrap(),
+        );
+        let date_configuration =
+            DateConfiguration::new(start_date(), vec![Weekday::Sat], vec![], false);
+        let season_config = SeasonConfig::new(time_configuration, date_configuration, 1);
+
+        let result = SingleElimination::new(false).validate_parameters(&teams(), &season_config);
+
+        assert!(
+            matches!(result, Err(AppError::StartBreakAfterEndBreak(break_start, break_end))
+                if break_start == GameTime::new(14, 0).unwrap()
+                    && break_end == GameTime::new(12, 0).unwrap()),
+            "{result:?}"
+        );
+    }
+
+    // Test case: a late start with no break at all. The second slot of the
+    // day would be 00:30, which GameTime addition renders as the small
+    // hours of the *same* date, so the bracket used to be produced with
+    // those games sitting before the ones they follow.
+    #[test]
+    fn validate_parameters_rejects_a_late_start_without_a_break() {
+        let time_configuration = TimeConfiguration::new(
+            GameTime::new(23, 30).unwrap(),
+            GameTime::new(0, 0).unwrap(),
+            GameTime::new(0, 0).unwrap(),
+            GameTime::new(0, 45).unwrap(),
+            GameTime::new(0, 15).unwrap(),
+        );
+        let date_configuration =
+            DateConfiguration::new(start_date(), vec![Weekday::Sat], vec![], false);
+        let season_config = SeasonConfig::new(time_configuration, date_configuration, 2);
+
+        let result = SingleElimination::new(false).validate_parameters(&teams(), &season_config);
+
+        assert!(
+            matches!(result, Err(AppError::ScheduleRunsPastMidnight(start)) if start == GameTime::new(23, 30).unwrap()),
+            "{result:?}"
+        );
+    }
+
+    // Test case: the slot after the first lands exactly on midnight, which
+    // GameTime addition renders as 00:00 — the start of the same day rather
+    // than the end of it, so it is no more usable than one that overshoots.
+    #[test]
+    fn validate_parameters_rejects_a_slot_landing_exactly_at_midnight_without_a_break() {
+        let time_configuration = TimeConfiguration::new(
+            GameTime::new(23, 0).unwrap(),
+            GameTime::new(0, 0).unwrap(),
+            GameTime::new(0, 0).unwrap(),
+            GameTime::new(0, 45).unwrap(),
+            GameTime::new(0, 15).unwrap(),
+        );
+        let date_configuration =
+            DateConfiguration::new(start_date(), vec![Weekday::Sat], vec![], false);
+        let season_config = SeasonConfig::new(time_configuration, date_configuration, 2);
+
+        let result = SingleElimination::new(false).validate_parameters(&teams(), &season_config);
+
+        assert!(
+            matches!(result, Err(AppError::ScheduleRunsPastMidnight(_))),
+            "{result:?}"
+        );
+    }
+
+    // An evening start is fine on its own: the scheduler's hard stop pushes
+    // what does not fit onto the next day, and nothing wraps as long as the
+    // slot after the first still falls inside the day.
+    #[test]
+    fn validate_parameters_accepts_an_evening_start_without_a_break() {
+        let time_configuration = TimeConfiguration::new(
+            GameTime::new(20, 0).unwrap(),
+            GameTime::new(0, 0).unwrap(),
+            GameTime::new(0, 0).unwrap(),
+            GameTime::new(0, 45).unwrap(),
+            GameTime::new(0, 15).unwrap(),
+        );
+        let date_configuration =
+            DateConfiguration::new(start_date(), vec![Weekday::Sat], vec![], false);
+        let season_config = SeasonConfig::new(time_configuration, date_configuration, 2);
+
+        let result = SingleElimination::new(false).validate_parameters(&teams(), &season_config);
+
+        assert!(result.is_ok(), "{result:?}");
+    }
+
     #[test]
     fn test_single_elimination_parameter_validation_rejects_too_few_teams() {
         let time_configuration = TimeConfiguration::new(
@@ -298,8 +508,8 @@ mod tests {
         let season_config = SeasonConfig::new(time_configuration, date_configuration, 1);
         let single_elimination = SingleElimination::new(false);
 
-        let result =
-            single_elimination.validate_parameters(&[Team::new("Solo Team", None)], &season_config);
+        let result = single_elimination
+            .validate_parameters(&[Team::new("Solo Team", None).unwrap()], &season_config);
 
         assert!(matches!(result, Err(AppError::NotEnoughTeams(1, 2))));
     }
@@ -515,7 +725,9 @@ mod tests {
         // slots in a single day than the day's time window provides before
         // wrapping back around, colliding with a time already used earlier
         // that same day, the same failure mode found in round_robin.rs.
-        let teams: Vec<Team> = (0..32).map(|i| Team::new(&format!("T{i}"), None)).collect();
+        let teams: Vec<Team> = (0..32)
+            .map(|i| Team::new(&format!("T{i}"), None).unwrap())
+            .collect();
         let time_configuration = TimeConfiguration::new(
             GameTime::new(9, 0).unwrap(),
             GameTime::new(12, 0).unwrap(),
@@ -558,7 +770,9 @@ mod tests {
     // to do under the same tight, 1-field window.
     #[test]
     fn test_round_2_respects_single_field_capacity() {
-        let teams: Vec<Team> = (0..20).map(|i| Team::new(&format!("T{i}"), None)).collect();
+        let teams: Vec<Team> = (0..20)
+            .map(|i| Team::new(&format!("T{i}"), None).unwrap())
+            .collect();
         let time_configuration = TimeConfiguration::new(
             GameTime::new(9, 0).unwrap(),
             GameTime::new(12, 0).unwrap(),
@@ -640,11 +854,11 @@ mod tests {
         // Seed 1 is the top seed by convention; the lowest seed numbers
         // should be the ones receiving byes.
         let teams = [
-            Team::new("Seed 1", Some(1)),
-            Team::new("Seed 2", Some(2)),
-            Team::new("Seed 3", Some(3)),
-            Team::new("Seed 4", Some(4)),
-            Team::new("Seed 5", Some(5)),
+            Team::new("Seed 1", Some(1)).unwrap(),
+            Team::new("Seed 2", Some(2)).unwrap(),
+            Team::new("Seed 3", Some(3)).unwrap(),
+            Team::new("Seed 4", Some(4)).unwrap(),
+            Team::new("Seed 5", Some(5)).unwrap(),
         ];
         let time_configuration = TimeConfiguration::new(
             GameTime::new(9, 0).unwrap(),
@@ -683,10 +897,10 @@ mod tests {
     #[test]
     fn test_single_elimination_power_of_two_team_count_needs_no_byes() {
         let teams = [
-            Team::new("A", None),
-            Team::new("B", None),
-            Team::new("C", None),
-            Team::new("D", None),
+            Team::new("A", None).unwrap(),
+            Team::new("B", None).unwrap(),
+            Team::new("C", None).unwrap(),
+            Team::new("D", None).unwrap(),
         ];
         let time_configuration = TimeConfiguration::new(
             GameTime::new(9, 0).unwrap(),
@@ -715,7 +929,7 @@ mod tests {
 
     #[test]
     fn test_single_elimination_two_teams_minimal_bracket() {
-        let teams = [Team::new("A", None), Team::new("B", None)];
+        let teams = [Team::new("A", None).unwrap(), Team::new("B", None).unwrap()];
         let time_configuration = TimeConfiguration::new(
             GameTime::new(9, 0).unwrap(),
             GameTime::new(12, 0).unwrap(),
@@ -737,9 +951,9 @@ mod tests {
     #[test]
     fn test_single_elimination_three_teams_smallest_bye_case() {
         let teams = [
-            Team::new("A", None),
-            Team::new("B", None),
-            Team::new("C", None),
+            Team::new("A", None).unwrap(),
+            Team::new("B", None).unwrap(),
+            Team::new("C", None).unwrap(),
         ];
         let time_configuration = TimeConfiguration::new(
             GameTime::new(9, 0).unwrap(),
@@ -762,12 +976,12 @@ mod tests {
     #[test]
     fn test_single_elimination_even_number_of_byes() {
         let teams = [
-            Team::new("A", None),
-            Team::new("B", None),
-            Team::new("C", None),
-            Team::new("D", None),
-            Team::new("E", None),
-            Team::new("F", None),
+            Team::new("A", None).unwrap(),
+            Team::new("B", None).unwrap(),
+            Team::new("C", None).unwrap(),
+            Team::new("D", None).unwrap(),
+            Team::new("E", None).unwrap(),
+            Team::new("F", None).unwrap(),
         ];
         let time_configuration = TimeConfiguration::new(
             GameTime::new(9, 0).unwrap(),
@@ -785,14 +999,7 @@ mod tests {
             .unwrap();
 
         // 6 teams -> bracket of 8 -> 2 byes (even).
-        assert_eq!(
-            schedule
-                .iter()
-                .filter(|game| game.get_home_team().get_name() == "Bye"
-                    || game.get_away_team().get_name() == "Bye")
-                .count(),
-            2
-        );
+        assert_eq!(schedule.iter().filter(|game| game.is_bye()).count(), 2);
         assert_schedule(&schedule, &teams, season_config.number_fields());
     }
 
@@ -819,8 +1026,7 @@ mod tests {
                 &None,
                 "single elimination does not support referees"
             );
-            let is_bye = game.get_home_team().get_name() == "Bye"
-                || game.get_away_team().get_name() == "Bye";
+            let is_bye = game.is_bye();
             assert_eq!(
                 is_bye,
                 index < number_of_byes,
@@ -830,7 +1036,7 @@ mod tests {
 
         // Round 1 (the byes plus the first real pairing round) should
         // account for every input team exactly once, none dropped, none
-        // duplicated. Later rounds use placeholder names (e.g. "WinnerA"),
+        // duplicated. Later rounds use placeholder names (e.g. "Winner A"),
         // since the actual winners aren't known yet, so this only checks
         // round 1. Names aren't compared against the input teams directly,
         // since anonymous mode renames teams to "1".."N", so this only
@@ -861,7 +1067,7 @@ mod tests {
 
         // Round 2 should seat every round-1 bye recipient exactly once
         // (identified directly from round 1's bye games), plus one
-        // "WinnerPrevious" placeholder per round-1 real game (the winner
+        // "Winner Previous" placeholder per round-1 real game (the winner
         // isn't known yet). No bye recipient should be missing, and none
         // should be paired against another bye recipient more than once.
         // A 2-team bracket has no round 2 at all (round 1's single game
@@ -907,12 +1113,14 @@ mod tests {
                 "round 2 should not pair the same bye recipient more than once"
             );
             // A round-1 real game's still-undecided winner shows up in round
-            // 2 as either "WinnerPrevious" (paired against a known bye
-            // recipient) or "WinnerA"/"WinnerB" (paired against another
+            // 2 as either "Winner Previous" (paired against a known bye
+            // recipient) or "Winner A"/"Winner B" (paired against another
             // undecided winner), depending on how it's slotted.
             let unresolved_winner_count = round_2_names
                 .iter()
-                .filter(|&&name| name == "WinnerPrevious" || name == "WinnerA" || name == "WinnerB")
+                .filter(|&&name| {
+                    name == "Winner Previous" || name == "Winner A" || name == "Winner B"
+                })
                 .count();
             assert_eq!(
                 unresolved_winner_count, first_real_round_games,
@@ -922,8 +1130,7 @@ mod tests {
 
         let mut games_per_time = HashMap::new();
         for game in schedule.iter() {
-            if game.get_home_team().get_name() != "Bye" && game.get_away_team().get_name() != "Bye"
-            {
+            if !game.is_bye() {
                 let game_time = game.get_game_time().unwrap();
                 let game_date = game.get_game_day();
                 let date_identifier = (game_time, *game_date);

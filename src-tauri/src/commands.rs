@@ -23,17 +23,34 @@ const ROWS_BEFORE_DAY_BLOCK: u32 = 2;
 pub fn tauri_generate_schedule(
     teams: Vec<Team>,
     season_config: SeasonConfig,
-) -> Result<Vec<Game>, AppError> {
+    output_directory_path: String,
+    language: &str,
+) -> Result<(), AppError> {
+    let number_fields = season_config.number_fields() as u16;
+    let date_configuration = season_config.date_configuration().clone();
+    let start_break = *season_config.time_configuration().start_break();
+    let end_break = *season_config.time_configuration().end_break();
     let season = Season::new(
         season_config,
         TournamentSelection::new(RoundRobin, SingleElimination::new(true)),
     );
     let schedule = season.compute_season_schedule(&teams)?;
-    Ok(schedule)
+
+    write_excel_schedule(
+        schedule,
+        start_break,
+        end_break,
+        date_configuration,
+        number_fields,
+        output_directory_path,
+        language,
+    )
 }
 
-#[tauri::command]
-pub fn generate_excel_schedule(
+// Writes a computed schedule out as an .xlsx file. Kept apart from the
+// command so the workbook layout can be exercised against a hand-built
+// schedule instead of one that has to be generated first.
+fn write_excel_schedule(
     schedule: Vec<Game>,
     start_break: GameTime,
     end_break: GameTime,
@@ -92,6 +109,7 @@ pub fn generate_excel_schedule(
         } else if current_time != Some(game_day.time()) {
             if current_time.map(GameTime::try_from).transpose()? < Some(start_break)
                 && GameTime::try_from(game_day.time())? >= end_break
+                && start_break != end_break
             {
                 row += 1;
                 write_break_row(
@@ -108,7 +126,7 @@ pub fn generate_excel_schedule(
         }
         current_time = Some(game_day.time());
 
-        if game.get_home_team().get_name() == "Bye" || game.get_away_team().get_name() == "Bye" {
+        if game.is_bye() {
             write_bye_game(worksheet, game, row, number_fields)?;
             continue;
         }
@@ -436,10 +454,10 @@ mod tests {
     }
 
     #[test]
-    fn generate_excel_schedule_does_not_error_on_an_empty_schedule() {
+    fn write_excel_schedule_does_not_error_on_an_empty_schedule() {
         let output_dir = temp_output_dir("empty-schedule");
 
-        let result = generate_excel_schedule(
+        let result = write_excel_schedule(
             vec![],
             GameTime::new(12, 0).unwrap(),
             GameTime::new(13, 30).unwrap(),
@@ -454,12 +472,12 @@ mod tests {
     }
 
     #[test]
-    fn generate_excel_schedule_writes_the_excluded_dates() {
+    fn write_excel_schedule_writes_the_excluded_dates() {
         use crate::types::game_time::GameTime;
 
         let game = Game::new_with_game_day(
-            Team::new("Home", None),
-            Team::new("Away", None),
+            Team::new("Home", None).unwrap(),
+            Team::new("Away", None).unwrap(),
             chrono::NaiveDate::from_ymd_opt(2026, 5, 13).unwrap(),
             GameTime::new(9, 0).unwrap(),
             None,
@@ -467,7 +485,7 @@ mod tests {
         .unwrap();
         let output_dir = temp_output_dir("excluded-dates-column");
 
-        generate_excel_schedule(
+        write_excel_schedule(
             vec![game],
             GameTime::new(12, 0).unwrap(),
             GameTime::new(13, 30).unwrap(),
@@ -657,12 +675,12 @@ mod tests {
     }
 
     #[test]
-    fn generate_excel_schedule_succeeds_for_a_single_day_schedule() {
+    fn write_excel_schedule_succeeds_for_a_single_day_schedule() {
         use crate::types::game_time::GameTime;
 
         let game = Game::new_with_game_day(
-            Team::new("Home", None),
-            Team::new("Away", None),
+            Team::new("Home", None).unwrap(),
+            Team::new("Away", None).unwrap(),
             chrono::NaiveDate::from_ymd_opt(2026, 5, 13).unwrap(),
             GameTime::new(9, 0).unwrap(),
             None,
@@ -670,7 +688,7 @@ mod tests {
         .unwrap();
         let output_dir = temp_output_dir("single-day-schedule");
 
-        let result = generate_excel_schedule(
+        let result = write_excel_schedule(
             vec![game],
             GameTime::new(12, 0).unwrap(),
             GameTime::new(13, 30).unwrap(),
@@ -685,15 +703,15 @@ mod tests {
     }
 
     #[test]
-    fn generate_excel_schedule_names_the_file_after_the_season_year_not_today() {
+    fn write_excel_schedule_names_the_file_after_the_season_year_not_today() {
         use crate::types::game_time::GameTime;
 
         // The season's game is in 2030, deliberately far from whatever year
         // the test actually runs in, so the assertion can't accidentally
         // pass by coincidence.
         let game = Game::new_with_game_day(
-            Team::new("Home", None),
-            Team::new("Away", None),
+            Team::new("Home", None).unwrap(),
+            Team::new("Away", None).unwrap(),
             chrono::NaiveDate::from_ymd_opt(2030, 5, 13).unwrap(),
             GameTime::new(9, 0).unwrap(),
             None,
@@ -701,7 +719,7 @@ mod tests {
         .unwrap();
         let output_dir = temp_output_dir("season-year-filename");
 
-        generate_excel_schedule(
+        write_excel_schedule(
             vec![game],
             GameTime::new(12, 0).unwrap(),
             GameTime::new(13, 30).unwrap(),
@@ -717,13 +735,13 @@ mod tests {
     }
 
     #[test]
-    fn generate_excel_schedule_versions_the_filename_instead_of_overwriting() {
+    fn write_excel_schedule_versions_the_filename_instead_of_overwriting() {
         use crate::types::game_time::GameTime;
 
         fn game(home: &str, away: &str) -> Game {
             Game::new_with_game_day(
-                Team::new(home, None),
-                Team::new(away, None),
+                Team::new(home, None).unwrap(),
+                Team::new(away, None).unwrap(),
                 chrono::NaiveDate::from_ymd_opt(2030, 5, 13).unwrap(),
                 GameTime::new(9, 0).unwrap(),
                 None,
@@ -734,7 +752,7 @@ mod tests {
         let output_dir = temp_output_dir("versioned-schedule");
 
         // First generation: plain filename, no suffix.
-        generate_excel_schedule(
+        write_excel_schedule(
             vec![game("Home", "Away")],
             GameTime::new(12, 0).unwrap(),
             GameTime::new(13, 30).unwrap(),
@@ -750,7 +768,7 @@ mod tests {
 
         // Second generation with the same year/language/output dir: should
         // not touch the first file, should create a "_v2" file instead.
-        generate_excel_schedule(
+        write_excel_schedule(
             vec![game("Other Home", "Other Away")],
             GameTime::new(12, 0).unwrap(),
             GameTime::new(13, 30).unwrap(),
@@ -771,7 +789,7 @@ mod tests {
 
         // Third generation: should create a "_v3" file, leaving the first
         // two untouched.
-        generate_excel_schedule(
+        write_excel_schedule(
             vec![game("Third Home", "Third Away")],
             GameTime::new(12, 0).unwrap(),
             GameTime::new(13, 30).unwrap(),
