@@ -35,6 +35,20 @@ impl Tournament for RoundRobin {
             ));
         }
 
+        if time_configuration.start_time() >= time_configuration.start_break() {
+            return Err(AppError::StartTimeAfterStartBreak(
+                *time_configuration.start_time(),
+                *time_configuration.start_break(),
+            ));
+        }
+
+        if time_configuration.start_break() > time_configuration.end_break() {
+            return Err(AppError::StartBreakAfterEndBreak(
+                *time_configuration.start_break(),
+                *time_configuration.end_break(),
+            ));
+        }
+
         // A zero-length game would leave every slot starting at the same
         // time, so the schedule could never advance. The gap after a game
         // may legitimately be zero (back-to-back kickoffs), the game itself

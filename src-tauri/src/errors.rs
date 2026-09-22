@@ -34,6 +34,12 @@ pub enum AppError {
     EmptyEligibleReferees,
     #[error("no game days provided")]
     EmptyGameDays,
+    #[error("start time needs to be configured before start break. Start time '{0}', start break: '{1}'")]
+    StartTimeAfterStartBreak(GameTime, GameTime),
+    #[error(
+        "start break needs to be configured after end break. Start break '{0}', end break: '{1}'"
+    )]
+    StartBreakAfterEndBreak(GameTime, GameTime),
     #[error("failed to resolve resource path")]
     ResourceResolveError(#[from] tauri::Error),
     #[error("{0} at {1} is not a valid local time (daylight saving transition)")]
