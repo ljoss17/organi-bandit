@@ -132,6 +132,23 @@ mod tests {
         );
     }
 
+    // An out-of-range time is refused where the payload is read, rather
+    // than being carried into the schedule as an impossible kick-off.
+    #[test]
+    fn refuses_a_payload_carrying_an_out_of_range_time() {
+        let payload = r#"{
+            "startTime": {"hour": 99, "minute": 0},
+            "startBreak": {"hour": 12, "minute": 0},
+            "endBreak": {"hour": 13, "minute": 0},
+            "gameDuration": {"hour": 1, "minute": 0},
+            "timeBetweenGames": {"hour": 0, "minute": 30}
+        }"#;
+
+        let result = serde_json::from_str::<TimeConfiguration>(payload);
+
+        assert!(result.is_err(), "hour 99 should be rejected");
+    }
+
     #[test]
     fn serializes_back_to_the_same_camel_case_keys() {
         let configuration =

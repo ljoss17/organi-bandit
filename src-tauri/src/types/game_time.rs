@@ -5,15 +5,34 @@ use std::ops::Sub;
 
 use chrono::NaiveTime;
 use chrono::Timelike;
+use serde::de;
 use serde::Deserialize;
+use serde::Deserializer;
 use serde::Serialize;
 
 use crate::errors::AppError;
 
-#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq, PartialOrd, Ord, Serialize)]
 pub struct GameTime {
     hour: u8,
     minute: u8,
+}
+
+// Use GameTime::new() to validate data before deserializing.
+impl<'de> Deserialize<'de> for GameTime {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        struct Fields {
+            hour: u8,
+            minute: u8,
+        }
+
+        let fields = Fields::deserialize(deserializer)?;
+        Self::new(fields.hour, fields.minute).map_err(de::Error::custom)
+    }
 }
 
 impl Display for GameTime {
@@ -125,6 +144,44 @@ mod tests {
     fn display_formats_with_leading_zeros() {
         let time = GameTime::new(9, 5).unwrap();
         assert_eq!(time.to_string(), "09:05");
+    }
+
+    #[test]
+    fn deserialize_accepts_a_valid_time() {
+        let time: GameTime =
+            serde_json::from_str(r#"{"hour":23,"minute":59}"#).expect("23:59 is a valid time");
+        assert_eq!(time, GameTime::new(23, 59).unwrap());
+    }
+
+    #[test]
+    fn deserialize_rejects_an_hour_past_23() {
+        let result = serde_json::from_str::<GameTime>(r#"{"hour":24,"minute":0}"#);
+        assert!(result.is_err(), "hour 24 should be rejected");
+    }
+
+    #[test]
+    fn deserialize_rejects_a_minute_past_59() {
+        let result = serde_json::from_str::<GameTime>(r#"{"hour":0,"minute":90}"#);
+        assert!(result.is_err(), "minute 90 should be rejected");
+    }
+
+    // A value too large for the field is refused outright rather than
+    // truncated into a time that looks plausible.
+    #[test]
+    fn deserialize_rejects_a_value_that_does_not_fit_the_field() {
+        let result = serde_json::from_str::<GameTime>(r#"{"hour":300,"minute":0}"#);
+        assert!(result.is_err(), "hour 300 should be rejected");
+    }
+
+    #[test]
+    fn deserialize_reverses_serialize() {
+        let time = GameTime::new(9, 5).unwrap();
+        let json = serde_json::to_string(&time).expect("serialization should succeed");
+
+        let deserialized: GameTime =
+            serde_json::from_str(&json).expect("deserialization should succeed");
+
+        assert_eq!(deserialized, time);
     }
 
     #[test]

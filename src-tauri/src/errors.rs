@@ -26,7 +26,7 @@ pub enum AppError {
     XlsxError(#[from] XlsxError),
     #[error("Date out of range")]
     DateOutOfRange(#[from] OutOfRange),
-    #[error("invalid time. Hour {0}, minute {0}")]
+    #[error("invalid time. Hour {0}, minute {1}")]
     InvalidTime(u8, u8),
     #[error("error parsing integer value")]
     ParseIntError(#[from] TryFromIntError),
