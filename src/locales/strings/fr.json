@@ -21,6 +21,7 @@
     "game-days": "Jours de match",
     "game-duration": "Durée du match",
     "generate-schedule": "Générer le calendrier",
+    "generating": "Génération du calendrier...",
     "hour-placeholder": "HH",
     "minute-placeholder": "MM",
     "number-fields": "Nombre de terrains",

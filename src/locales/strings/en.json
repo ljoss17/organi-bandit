@@ -21,6 +21,7 @@
     "game-days": "Game days",
     "game-duration": "Game duration",
     "generate-schedule": "Generate schedule",
+    "generating": "Generating the schedule...",
     "hour-placeholder": "HH",
     "minute-placeholder": "MM",
     "number-fields": "Number of fields",

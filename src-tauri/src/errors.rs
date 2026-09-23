@@ -70,6 +70,14 @@ pub enum AppError {
         "team \"{0}\" is listed more than once with different seeds ({1} and {2}); give it a single seed or remove the duplicate entry"
     )]
     ConflictingTeamSeeds(String, u32, u32),
+    #[error("missing team for specified date '{0}'")]
+    MissingTeam(String),
+    #[error("failed to retrieve eligible team")]
+    MissingEligibleTeam,
+    #[error("a round on {0} has no team on bye although the schedule has byes")]
+    MissingByeTeam(NaiveDate),
+    #[error("the second round-robin pass has no round matching the first pass's round on {0}")]
+    MismatchedSchedulePasses(NaiveDate),
 }
 
 impl Serialize for AppError {

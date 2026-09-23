@@ -52,31 +52,27 @@ impl Tournament for RoundRobin {
             }
         }
 
-        // A zero-length game would leave every slot starting at the same
-        // time, so the schedule could never advance. The gap after a game
-        // may legitimately be zero (back-to-back kickoffs), the game itself
-        // cannot.
+        // A zero-length game would leave every slot starting at the same time,
+        // so the schedule could never advance; the gap after a game may be zero,
+        // the game itself cannot.
         if time_configuration.game_duration() == &GameTime::new(0, 0)? {
             return Err(AppError::ZeroGameDuration);
         }
 
-        // Below 4 teams, once one team is on bye, too few opponents remain
-        // to give every team two *different* opponents on a shared match
-        // day — mathematically impossible regardless of how much time is
-        // available.
+        // Below 4 teams, once one is on bye there are too few opponents left to
+        // give every team two *different* opponents on a shared match day.
         if teams.len() < 4 {
             return Err(AppError::NotEnoughTeams(teams.len(), 4));
         }
 
         let slots_per_leg = Self::slots_per_leg(teams, season_config);
 
-        // The day's play has to finish before midnight. With a break, the
-        // leg after it mirrors the leg before it and so ends at
-        // end_break + (start_break - start_time); without one, both legs
-        // run on from start_time. GameTime addition wraps at 24h, so a
-        // window reaching midnight lands in the small hours instead and
-        // reads as "0 slots available" rather than as the misconfiguration
-        // it is. The break checks above guarantee the subtraction is safe.
+        // The day's play has to finish before midnight. With a break the leg
+        // after it mirrors the one before, ending at end_break + (start_break -
+        // start_time); without one, both legs run on from start_time. Worked in
+        // minutes because GameTime addition wraps at 24h, which would hide the
+        // overrun as "0 slots available"; the checks above make the subtraction
+        // safe.
         let day_end = if time_configuration.has_break() {
             time_configuration.end_break().as_minutes()
                 + (time_configuration.start_break().as_minutes()
@@ -142,7 +138,7 @@ impl Tournament for RoundRobin {
                     season_config,
                     &leg_b_start_time,
                 )?;
-                if let Some(schedule) = self.merge_schedules(pass_a.clone(), pass_b) {
+                if let Some(schedule) = self.merge_schedules(pass_a.clone(), pass_b)? {
                     maybe_schedule = Some(schedule);
                     break 'outer;
                 }
@@ -165,19 +161,11 @@ impl RoundRobin {
         teams[1..].rotate_right(1);
     }
 
-    // Same eligibility rules as `add_referees` (not busy playing, not on
-    // bye that day, not already refereeing another game at that exact
-    // time), but where `add_referees` commits to a single greedy pass and
-    // stops, this also rebalances afterward: a purely greedy, myopic
-    // "assign whoever's currently least-used" pass can leave some team
-    // under-assigned overall even when a perfectly even split exists,
-    // since it has no look-ahead into which teams are about to become
-    // ineligible for a long stretch. The rebalancing pass repeatedly
-    // reassigns one game from the most-used team to the least-used team
-    // (whenever the least-used team happens to be eligible for one of the
-    // most-used team's games) until the spread is at most 1, or no more
-    // such swaps can be found (best-effort local search, not a globally
-    // optimal assignment).
+    // Gives every real game a referee that is not playing at that time, not on
+    // bye that day, and not already refereeing then. A greedy least-used-first
+    // pass has no look-ahead and can leave a team under-assigned even when an
+    // even split exists, so a rebalancing pass follows it (best-effort local
+    // search, not a globally optimal assignment).
     fn add_referees(&self, schedule: Vec<Game>, teams: &[Team]) -> Result<Vec<Game>, AppError> {
         let mut bye_team_by_day: HashMap<NaiveDate, &Team> = HashMap::new();
         for game in schedule.iter() {
@@ -216,7 +204,7 @@ impl RoundRobin {
             let game = &schedule[index];
             let busy_teams = busy_teams_set
                 .get(game.get_game_day())
-                .expect("busy_teams_set was built from this same schedule, so every game's day is already a key");
+                .ok_or_else(|| AppError::MissingTeam(game.get_game_day().to_string()))?;
             let already_refereeing = referees_at_time
                 .get(game.get_game_day())
                 .cloned()
@@ -237,7 +225,7 @@ impl RoundRobin {
             let referee = *eligible_teams
                 .iter()
                 .min_by_key(|team| referee_count[**team])
-                .expect("eligible_teams is non-empty, checked above");
+                .ok_or(AppError::MissingEligibleTeam)?;
 
             referees_at_time
                 .entry(game.get_game_day())
@@ -247,30 +235,24 @@ impl RoundRobin {
             assigned_referee.insert(index, referee);
         }
 
-        // Rebalancing pass. Bounded by schedule length: each successful
-        // swap strictly reduces the max-min spread by 2, so this can
-        // never run longer than that, and it stops early the moment no
-        // beneficial swap is found.
+        // Rebalancing pass, bounded by schedule length: each successful swap
+        // reduces the max-min spread by 2, and it stops as soon as none is left.
         for _ in 0..real_game_indices.len() {
             let (&max_team, &max_count) = referee_count
                 .iter()
                 .max_by_key(|(_, &count)| count)
-                .expect("teams is non-empty, checked in validate_parameters");
+                .ok_or(AppError::MissingEligibleTeam)?;
             let (&min_team, &min_count) = referee_count
                 .iter()
                 .min_by_key(|(_, &count)| count)
-                .expect("teams is non-empty, checked in validate_parameters");
+                .ok_or(AppError::MissingEligibleTeam)?;
 
             if max_count - min_count <= 1 {
                 break;
             }
 
             let swappable_index = real_game_indices.iter().copied().find(|index| {
-                if *assigned_referee
-                    .get(index)
-                    .expect("every real game was assigned a referee above")
-                    != max_team
-                {
+                if assigned_referee.get(index) != Some(&max_team) {
                     return false;
                 }
                 let game = &schedule[*index];
@@ -281,17 +263,16 @@ impl RoundRobin {
             });
 
             let Some(index) = swappable_index else {
-                // No game currently refereed by the most-used team can be
-                // handed to the least-used team without violating an
-                // eligibility rule. Stop rather than loop on a pair that
-                // can never be rebalanced.
+                // Nothing the most-used team referees can move to the
+                // least-used team without breaking an eligibility rule, so stop
+                // rather than spin on a pair that can never be rebalanced.
                 break;
             };
 
             let game_day = schedule[index].get_game_day();
             referees_at_time
                 .get_mut(game_day)
-                .expect("this game's day is already a key, populated during the initial pass")
+                .ok_or_else(|| AppError::MissingTeam(game_day.to_string()))?
                 .retain(|&team| team != max_team);
             referees_at_time.entry(game_day).or_default().push(min_team);
             *referee_count.entry(max_team).or_insert(0) -= 1;
@@ -319,27 +300,17 @@ impl RoundRobin {
         Ok(schedule_with_referee)
     }
 
-    // How many distinct time slots one leg needs. Both legs are structurally
-    // identical single-leg schedules, so they always need the same number of
-    // real games per round (teams.len() / 2 — integer division holds whether
-    // the count is even or odd, the odd case's bye simply removes one team
-    // from that round before halving), and fields divide those games across
-    // each slot.
+    // How many distinct time slots one leg needs; both legs are structurally
+    // identical, so each round holds teams.len() / 2 real games (an odd count's
+    // bye removes one team before halving), spread across the fields.
     fn slots_per_leg(teams: &[Team], season_config: &SeasonConfig) -> u32 {
         let games_per_leg = teams.len() as u32 / 2;
         games_per_leg.div_ceil(season_config.number_fields())
     }
 
-    // Where the second leg's clock starts each day.
-    //
-    // With a break, that is end_break: the break is what separates the two
-    // legs, and each leg gets its own mirrored window on its own side of it.
-    //
-    // With no break there is no divider, so the second leg starts in the
-    // first slot the first leg does not use — start_time advanced by exactly
-    // as many whole slots as one leg occupies. The two legs then run as one
-    // continuous block of games, spaced by the configured interval like any
-    // other consecutive pair.
+    // Where the second leg's clock starts each day: end_break when there is a
+    // break, since the break is what separates the legs, and otherwise the first
+    // slot the first leg does not use, so the two run as one continuous block.
     fn leg_b_start_time(
         time_configuration: &TimeConfiguration,
         slots_per_leg: u32,
@@ -353,14 +324,11 @@ impl RoundRobin {
         GameTime::from_minutes(start + interval * slots_per_leg)
     }
 
-    // Counts the distinct game-time slots available to the first leg, using a
-    // probe scheduler with 1 field since this counts distinct TIME VALUES
-    // only; field capacity is factored in separately by the caller.
-    //
-    // With a break the leg is bounded by start_break, and a slot only counts
-    // if the game played in it finishes before the break begins. With no
-    // break the only bound is the scheduler's own hard stop, since the second
-    // leg is placed after this one rather than opposite it.
+    // Counts the distinct game-time slots available to the first leg, probing
+    // with 1 field since this counts time values only and the caller applies
+    // field capacity itself. With a break the bound is start_break and a slot
+    // counts only if its game finishes first; without one it is the scheduler's
+    // hard stop.
     fn available_slots_before_break(&self, time_configuration: &TimeConfiguration) -> u32 {
         let mut probe =
             GameTimeScheduler::new(time_configuration, time_configuration.start_time(), 1);
@@ -370,11 +338,9 @@ impl RoundRobin {
             .then(|| *time_configuration.start_break());
 
         let mut slots = 0u32;
-        // Defensive iteration cap. validate_parameters rejects a zero game
-        // duration, so the interval is always positive and try_advance
-        // always moves current_time forward — but this probe doesn't depend
-        // on having been called after that check, and a zero interval would
-        // otherwise spin here forever.
+        // Defensive iteration cap: validate_parameters rejects a zero game
+        // duration so try_advance always moves forward, but this probe does not
+        // depend on having been called after that check.
         for _ in 0..(24 * 60) {
             let game_ends = *probe.current_time() + *time_configuration.game_duration();
             if probe.is_past_hard_stop() || boundary.is_some_and(|limit| game_ends > limit) {
@@ -408,17 +374,8 @@ impl RoundRobin {
         slots
     }
 
-    // Generates a complete single round-robin: every pair of teams meets
-    // exactly once, and each team plays at most one game per day (one bye
-    // if the team count is odd), since only one leg's worth of games is
-    // scheduled per day here. This is the proven-correct core the
-    // eventual double round-robin is built from, by generating two of
-    // these (different team orders) and merging them.
-    // `leg_start_time` is the clock each day's schedule for this leg
-    // resets to — the season's actual start_time for the leg that plays
-    // before the break, or end_break for the leg that plays after it, so
-    // the two legs land in disjoint, non-adjacent windows every day rather
-    // than one leg continuing wherever the other's clock happened to stop.
+    // Generates a complete single round-robin: every pair meets once and each
+    // team plays at most one game per day (one bye if the count is odd).
     fn generate_single_game_schedule(
         &self,
         teams: &[Team],
@@ -452,12 +409,9 @@ impl RoundRobin {
                 let home_team = inner_teams[i].clone();
                 let away_team = inner_teams[number_teams - 1 - i].clone();
                 let is_bye = home_team.is_bye() || away_team.is_bye();
-                // A bye never advances the clock, so it can never legitimately
-                // need to spill onto a new day either — skipping the check
-                // here avoids the round's harmless bye slot getting stranded
-                // on a fresh day purely because the clock's last real-game
-                // advance happened to tick past hard_stop with nothing left
-                // that actually needed the room.
+                // A bye never advances the clock, so it never needs a new day
+                // either; skipping the check keeps the round's bye slot from
+                // being stranded on a fresh day on its own.
                 if !is_bye {
                     game_day_scheduler.advance_if_past_hard_stop(&mut game_time_scheduler)?;
                 }
@@ -478,17 +432,18 @@ impl RoundRobin {
         Ok(schedule)
     }
 
-    // Merges two single-round-robin schedules (see `generate_single_game_schedule`)
-    // into one combined schedule where every active team plays twice per
-    // day. Rounds are matched by which team has the bye that day (or, if
-    // there's no bye at all, by the calendar day directly, since both
-    // passes then share the exact same day sequence with no team ever
-    // idle), so a team's bye absorbs both passes' idle round into one
-    // true day off rather than two separate ones. Returns None if any
-    // merged day would repeat the same pair in both halves — the two
-    // passes don't combine cleanly and the caller should try a fresh pair
-    // of schedules.
-    fn merge_schedules(&self, pass_a: Vec<Game>, pass_b: Vec<Game>) -> Option<Vec<Game>> {
+    // Merges two single round-robins into one schedule where every active team
+    // plays twice a day. Rounds are matched by which team has the bye (or by
+    // calendar day when there is none), so a team's bye absorbs both passes'
+    // idle round into one day off. Returns Ok(None) if a merged day would repeat
+    // a pair, leaving the caller to try a fresh pair of schedules; the two passes
+    // failing to line up at all is a bug here, not a retryable outcome, so it
+    // comes back as an error instead.
+    fn merge_schedules(
+        &self,
+        pass_a: Vec<Game>,
+        pass_b: Vec<Game>,
+    ) -> Result<Option<Vec<Game>>, AppError> {
         let has_bye = pass_a.iter().any(|game| game.is_bye());
 
         let pass_a_days = group_by_day(pass_a);
@@ -497,11 +452,9 @@ impl RoundRobin {
         let mut pass_b_by_bye: HashMap<String, Vec<Game>> = HashMap::new();
         let mut pass_b_by_day: HashMap<NaiveDate, Vec<Game>> = HashMap::new();
         if has_bye {
-            for (_, games) in pass_b_days {
-                let bye_name = bye_team_name(&games)
-                    .expect("every round has a bye team when the padded team count is odd")
-                    .to_owned();
-                pass_b_by_bye.insert(bye_name, games);
+            for (day, games) in pass_b_days {
+                let bye_name = bye_team_name(&games).ok_or(AppError::MissingByeTeam(day))?;
+                pass_b_by_bye.insert(bye_name.to_owned(), games);
             }
         } else {
             for (day, games) in pass_b_days {
@@ -513,15 +466,14 @@ impl RoundRobin {
 
         for (day, games_a) in pass_a_days {
             let games_b = if has_bye {
-                let bye_name = bye_team_name(&games_a)
-                    .expect("every round has a bye team when the padded team count is odd");
-                pass_b_by_bye.remove(bye_name).expect(
-                    "pass_b is a complete single round-robin, so every team has exactly one bye round",
-                )
+                let bye_name = bye_team_name(&games_a).ok_or(AppError::MissingByeTeam(day))?;
+                pass_b_by_bye
+                    .remove(bye_name)
+                    .ok_or(AppError::MismatchedSchedulePasses(day))?
             } else {
-                pass_b_by_day.remove(&day).expect(
-                    "pass_a and pass_b share the same start date and game days, so their day sequences align exactly",
-                )
+                pass_b_by_day
+                    .remove(&day)
+                    .ok_or(AppError::MismatchedSchedulePasses(day))?
             };
 
             // A same-day rematch means these two passes don't combine cleanly.
@@ -540,36 +492,29 @@ impl RoundRobin {
                 if opponent_in_a.get(game.get_home_team().get_name())
                     == Some(&game.get_away_team().get_name())
                 {
-                    return None;
+                    return Ok(None);
                 }
             }
 
             merged.extend(games_a);
-            // pass_a's own bye entry (kept above) already represents this
-            // day's bye, so pass_b's bye entry (if any) is redundant here.
-            // pass_b's own games already carry the correct time for their
-            // side of the break (each leg was generated with its own
-            // leg_start_time — start_time for pass_a, end_break for
-            // pass_b — and a matching mirrored hard_stop), so they're used
-            // as generated rather than replayed through a continuation
-            // scheduler. Only the calendar day is re-stamped to pass_a's,
-            // as a cheap safety net in case the two passes' day sequences
-            // ever drift.
+            // pass_a's bye entry already covers this day, and pass_b's games
+            // already carry the right time for their side of the break, so only
+            // the calendar day is re-stamped, as a safety net in case the two
+            // passes' day sequences ever drift.
             for game in games_b.into_iter().filter(|game| !game.is_bye()) {
-                let game_time = game.get_game_time().ok()?;
+                let game_time = game.get_game_time()?;
                 let updated_game = Game::new_with_game_day(
                     game.get_home_team().clone(),
                     game.get_away_team().clone(),
                     day,
                     game_time,
                     game.get_referee().clone(),
-                )
-                .ok()?;
+                )?;
                 merged.push(updated_game);
             }
         }
 
-        Some(merged)
+        Ok(Some(merged))
     }
 }
 
@@ -587,9 +532,8 @@ fn bye_team_name(games: &[Game]) -> Option<&str> {
     })
 }
 
-// Groups games into calendar-day buckets, preserving day order. Relies on
-// games already being contiguous by day (true for anything produced by
-// `generate_single_game_schedule`, which only ever advances forward).
+// Groups games into calendar-day buckets, preserving day order; relies on games
+// already being contiguous by day, as `generate_single_game_schedule` leaves them.
 fn group_by_day(games: Vec<Game>) -> Vec<(NaiveDate, Vec<Game>)> {
     let mut groups: Vec<(NaiveDate, Vec<Game>)> = Vec::new();
     for game in games {

@@ -19,7 +19,7 @@ use crate::types::tournament_selection::TournamentSelection;
 
 const ROWS_BEFORE_DAY_BLOCK: u32 = 2;
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn tauri_generate_schedule(
     teams: Vec<Team>,
     season_config: SeasonConfig,
