@@ -439,6 +439,23 @@ function collectSeasonInput() {
   };
 }
 
+// Only the controls this actually switched off are switched back on, so a
+// control disabled for some other reason isn't silently re-enabled when a
+// generation finishes. Hidden controls stay hidden either way.
+let lockedControls = [];
+
+function setControlsDisabled(disabled) {
+  if (disabled) {
+    lockedControls = Array.from(
+      document.querySelectorAll("input, select, button"),
+    ).filter((element) => !element.disabled);
+    lockedControls.forEach((element) => (element.disabled = true));
+    return;
+  }
+  lockedControls.forEach((element) => (element.disabled = false));
+  lockedControls = [];
+}
+
 document.getElementById("generate-schedule").addEventListener("click", async () => {
   const statusMessage = document.getElementById("status-message");
   statusMessage.textContent = "";
@@ -475,6 +492,13 @@ document.getElementById("generate-schedule").addEventListener("click", async () 
     return;
   }
 
+  // The backend command runs off the UI thread, so the window keeps painting
+  // while a schedule is being built. Nothing that feeds into the run may change
+  // under it, so every control is locked for the duration and the message says
+  // why the app is busy rather than leaving it looking stalled.
+  setControlsDisabled(true);
+  statusMessage.textContent = t("generating");
+
   try {
     await window.__TAURI__.core.invoke("tauri_generate_schedule", {
       teams,
@@ -500,5 +524,7 @@ document.getElementById("generate-schedule").addEventListener("click", async () 
     console.error(error);
     statusMessage.textContent = String(error);
     statusMessage.classList.add("error");
+  } finally {
+    setControlsDisabled(false);
   }
 });
