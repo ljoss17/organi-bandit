@@ -1,7 +1,7 @@
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
 
 use crate::commands::tauri_generate_schedule;
-use crate::utils::parser::{read_changelog, read_team_list, write_team_list};
+use crate::utils::parser::{new_team_list, read_changelog, read_team_list, write_team_list};
 
 pub mod commands;
 pub mod errors;
@@ -21,6 +21,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             read_team_list,
             write_team_list,
+            new_team_list,
             read_changelog,
             tauri_generate_schedule
         ])

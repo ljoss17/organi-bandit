@@ -63,6 +63,12 @@ pub fn write_team_list(file_path: &Path, new_teams: Vec<Team>) -> Result<(), App
     Ok(())
 }
 
+#[tauri::command]
+pub fn new_team_list(file_path: &Path) -> Result<(), AppError> {
+    fs::write(file_path, "[]")?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use std::path::PathBuf;
@@ -224,6 +230,37 @@ mod tests {
         assert_eq!(
             read_team_list(&file_path).expect("the earlier file should still read back"),
             vec![team("Morges Bandits", Some(1))]
+        );
+    }
+
+    // The file is only useful if the read path accepts it, so the two are
+    // checked together rather than asserting on the bytes written.
+    #[test]
+    fn new_team_list_creates_a_file_that_reads_back_as_an_empty_list() {
+        let file_path = temp_team_file("new-empty-list");
+        let _ = fs::remove_file(&file_path);
+
+        new_team_list(&file_path).expect("creating should succeed");
+
+        assert_eq!(
+            read_team_list(&file_path).expect("the new file should read back"),
+            vec![]
+        );
+    }
+
+    // Overwriting is deliberate: the save dialog asks before this is called,
+    // so refusing here would contradict the answer already given.
+    #[test]
+    fn new_team_list_overwrites_an_existing_file() {
+        let file_path = temp_team_file("new-overwrites");
+        write_team_list(&file_path, vec![team("Morges Bandits", Some(1))])
+            .expect("writing should succeed");
+
+        new_team_list(&file_path).expect("creating over an existing file should succeed");
+
+        assert_eq!(
+            read_team_list(&file_path).expect("the new file should read back"),
+            vec![]
         );
     }
 }
