@@ -281,6 +281,32 @@ document.getElementById("browse-teams").addEventListener("click", async () => {
   }
 });
 
+// The save dialog asks before replacing an existing file, so anything that
+// comes back here has already been confirmed. Loading the new file afterwards
+// is what switches the editor over to it, so the next save writes there.
+document.getElementById("new-teams-file").addEventListener("click", async () => {
+  const selected = await window.__TAURI__.dialog.save({
+    defaultPath: "teams.json",
+    filters: [{ name: "JSON", extensions: ["json"] }],
+  });
+
+  if (!selected) {
+    return;
+  }
+
+  // The dialog only appends the extension on some platforms.
+  const filePath = selected.endsWith(".json") ? selected : `${selected}.json`;
+
+  setTeamsStatus("", false);
+  try {
+    await window.__TAURI__.core.invoke("new_team_list", { filePath });
+  } catch (error) {
+    setTeamsStatus(String(error), true);
+    return;
+  }
+  await loadTeams(filePath);
+});
+
 function setTeamsEditingUI(isEditing) {
   document.getElementById("edit-teams").hidden = isEditing;
   document.getElementById("add-team").hidden = !isEditing;

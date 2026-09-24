@@ -24,6 +24,7 @@
     "generating": "Generating the schedule...",
     "hour-placeholder": "HH",
     "minute-placeholder": "MM",
+    "new-teams-file": "Create new teams file...",
     "number-fields": "Number of fields",
     "output-folder": "Output folder",
     "output-folder-placeholder": "Select a folder...",
