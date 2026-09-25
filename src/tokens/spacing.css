@@ -1,0 +1,15 @@
+:root{
+--space-1:2px;--space-2:4px;--space-3:6px;--space-4:8px;--space-5:12px;--space-6:16px;--space-7:20px;--space-8:24px;--space-9:32px;--space-10:40px;--space-11:48px;--space-12:64px;
+
+/* Application shell metrics — a fixed-size desktop window, not a fluid page */
+--titlebar-h:38px;
+--sidebar-w:232px;
+--footer-h:60px;
+--field-h:34px;
+--field-h-lg:40px;
+--row-h:44px;
+--gutter:24px;
+--panel-pad:20px;
+--field-gap:14px;
+--label-gap:6px;
+}

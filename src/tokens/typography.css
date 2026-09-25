@@ -1,0 +1,38 @@
+:root{
+--font-display:"Barlow Condensed","Oswald","Arial Narrow",sans-serif;
+--font-sans:"Barlow","Helvetica Neue",Helvetica,sans-serif;
+--font-mono:"JetBrains Mono","SFMono-Regular",Consolas,monospace;
+
+--fw-regular:400;/* @kind font */
+--fw-medium:500;/* @kind font */
+--fw-semibold:600;/* @kind font */
+--fw-bold:700;/* @kind font */
+
+/* Display — condensed, uppercase, tight. Scoreboard voice. */
+--fs-display-xl:56px;--lh-display-xl:.92;/* @kind font */
+--fs-display-l:40px;--lh-display-l:.96;/* @kind font */
+--fs-display-m:28px;--lh-display-m:1.0;/* @kind font */
+--fs-display-s:20px;--lh-display-s:1.05;/* @kind font */
+
+/* Body / UI */
+--fs-body-l:16px;--lh-body-l:1.55;/* @kind font */
+--fs-body-m:14px;--lh-body-m:1.5;/* @kind font */
+--fs-body-s:13px;--lh-body-s:1.45;/* @kind font */
+--fs-caption:11px;--lh-caption:1.35;/* @kind font */
+
+/* Mono — times, durations, sheet cells */
+--fs-mono-m:14px;--fs-mono-s:12px;
+
+--tracking-display:-0.01em;/* @kind font */
+--tracking-eyebrow:0.14em;/* @kind font */
+--tracking-label:0.06em;/* @kind font */
+--tracking-body:0em;/* @kind font */
+
+/* Composed roles */
+--type-display:var(--fw-bold) var(--fs-display-l)/var(--lh-display-l) var(--font-display);/* @kind font */
+--type-h1:var(--fw-bold) var(--fs-display-m)/var(--lh-display-m) var(--font-display);/* @kind font */
+--type-h2:var(--fw-semibold) var(--fs-display-s)/var(--lh-display-s) var(--font-display);/* @kind font */
+--type-body:var(--fw-regular) var(--fs-body-m)/var(--lh-body-m) var(--font-sans);/* @kind font */
+--type-label:var(--fw-semibold) var(--fs-caption)/var(--lh-caption) var(--font-sans);/* @kind font */
+--type-mono:var(--fw-medium) var(--fs-mono-m)/1.4 var(--font-mono);/* @kind font */
+}

@@ -1,0 +1,9 @@
+body{margin:0;font:var(--type-body);color:var(--text-body);background:var(--surface-app);-webkit-font-smoothing:antialiased}
+h1,h2,h3,h4{margin:0;font-family:var(--font-display);color:var(--text-heading);text-transform:uppercase;letter-spacing:var(--tracking-display)}
+h1{font:var(--type-h1)}h2{font:var(--type-h2)}
+a{color:var(--text-link);text-decoration:none;border-bottom:1px solid rgba(200,23,28,.35)}
+a:hover{color:var(--text-link-hover);border-bottom-color:var(--text-link-hover)}
+*,*::before,*::after{box-sizing:border-box}
+::selection{background:var(--red-200);color:var(--ink-900)}
+.bandit-eyebrow{font:var(--type-label);text-transform:uppercase;letter-spacing:var(--tracking-eyebrow);color:var(--text-muted)}
+.bandit-stripe{border-left:var(--stripe-w) solid var(--bandit-red)}
