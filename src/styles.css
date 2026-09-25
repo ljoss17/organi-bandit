@@ -1,15 +1,37 @@
-.logo.vanilla:hover {
-  filter: drop-shadow(0 0 2em #ffe21c);
-}
+/* Organi-Bandit — src/styles.css
+ * Morges Bandits design system · drop-in replacement, no build step.
+ *
+ * The window is a football field. Mown-grass striping with white yard lines and
+ * hash marks fills the ground; the teams column is a deep-green sideline panel;
+ * the configuration form sits on a pale-green "lineup sheet" with the field's
+ * own yard lines showing faintly through it.
+ *
+ * How contrast is kept: green is a GROUND only. Deep greens carry white type at
+ * heading scale; everything at body scale sits on the pale sheet, dark-on-light.
+ * The crest is black line art and only ever meets a light ground, so it needs no
+ * containment tile in this layout.
+ *
+ * Selectors are the app's own (src/index.html @ 20fc2dec). Nothing renamed, no
+ * markup changes. Dark mode is deliberately absent — see app/README.md.
+ */
+
+@import url("tokens/fonts.css");
+@import url("tokens/colors.css");
+@import url("tokens/typography.css");
+@import url("tokens/spacing.css");
+@import url("tokens/radius.css");
+@import url("tokens/elevation.css");
+@import url("tokens/motion.css");
+@import url("tokens/turf.css");
+
+/* ── Document ───────────────────────────────────────────── */
 :root {
-  font-family: Inter, Avenir, Helvetica, Arial, sans-serif;
+  font-family: var(--font-sans);
   font-size: 16px;
-  line-height: 24px;
-  font-weight: 400;
-
-  color: #0f0f0f;
-  background-color: #f6f6f6;
-
+  line-height: var(--lh-body-l);
+  font-weight: var(--fw-regular);
+  color: var(--text-body);
+  background-color: var(--turf-ground);
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
@@ -17,237 +39,849 @@
   -webkit-text-size-adjust: 100%;
 }
 
+body {
+  margin: 0;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+/* main.js toggles visibility with the `hidden` attribute (the edit-mode buttons
+ * and #update-status). Explicit `display` on button/.status-message below would
+ * otherwise beat the UA rule and make them permanently visible. */
+[hidden] {
+  display: none !important;
+}
+
+::selection {
+  background: var(--red-200);
+  color: var(--ink-900);
+}
+
+h1 {
+  margin: 0;
+  font-family: var(--font-display);
+  font-weight: var(--fw-bold);
+  font-size: var(--fs-display-l);
+  line-height: var(--lh-display-l);
+  letter-spacing: var(--tracking-display);
+  text-transform: uppercase;
+  text-align: center;
+  color: var(--text-heading);
+}
+
+a {
+  font-weight: var(--fw-medium);
+  color: var(--text-link);
+  text-decoration: none;
+  border-bottom: 1px solid rgba(200, 23, 28, 0.35);
+}
+
+a:hover {
+  color: var(--text-link-hover);
+  border-bottom-color: var(--text-link-hover);
+}
+
+/* ── Shell ──────────────────────────────────────────────── */
 .page {
   display: flex;
   flex-direction: row;
   min-height: 100vh;
+  padding: var(--space-5);
+  gap: var(--space-5);
+  /* Mown grass, then white yard lines, then two rows of inbound hash marks.
+   * Every layer is a background on this ground — never an overlay — so no
+   * decoration can land on top of a control. */
+  background-color: var(--turf-ground);
+  background-image: var(--turf-hashes), var(--turf-hashes), var(--turf-lines), var(--turf-stripes);
+  background-size: 100% var(--hash-len), 100% var(--hash-len), auto, auto, auto;
+  background-position: 0 26%, 0 74%, 0 0, 0 0, 0 0;
+  background-repeat: repeat-x, repeat-x, repeat, repeat, repeat;
+  background-attachment: fixed;
 }
 
 .sidebar {
-  width: 220px;
+  position: relative;
+  width: var(--sidebar-w);
   flex-shrink: 0;
-  padding: 1em;
-  border-right: 1px solid #d9d9d9;
+  padding: var(--space-6);
+  padding-right: calc(var(--space-6) + var(--space-4));
+  background-color: var(--turf-chrome);
+  border-right: 0;
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-2);
   overflow-y: auto;
+}
+
+/* The sideline: a ticked white band running the height of the teams column. */
+.sidebar::after {
+  content: "";
+  position: absolute;
+  top: var(--space-5);
+  bottom: var(--space-5);
+  right: var(--space-3);
+  width: var(--hash-len);
+  background-image: var(--turf-sideline);
+  /* Held at 45% — at full strength the ticks compete with the roster a few
+     pixels away. */
+  opacity: 0.45;
+  pointer-events: none;
+}
+
+.sidebar h2 {
+  position: relative;
+  margin: 0 0 var(--space-5);
+  padding-bottom: var(--space-4);
+  font-family: var(--font-display);
+  font-weight: var(--fw-semibold);
+  font-size: var(--fs-display-s);
+  line-height: var(--lh-display-s);
+  letter-spacing: var(--tracking-display);
+  text-transform: uppercase;
+  color: var(--text-heading);
+  border-bottom: var(--border-w-strong) solid var(--bandit-red);
+}
+
+/* Tick row under the sidebar heading, echoing the sideline. */
+.sidebar h2::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: calc(var(--line-w-heavy) * -1 - 5px);
+  height: 3px;
+  background-image: var(--turf-hashes);
+  background-size: 12px 3px;
 }
 
 .sidebar ul {
   list-style: none;
-  margin: 0;
+  margin: var(--space-5) 0 0;
   padding: 0;
 }
 
 .sidebar li {
-  padding: 0.4em 0;
+  padding: var(--space-3) var(--space-4);
+  margin: 0 calc(var(--space-4) * -1);
+  border-radius: var(--radius-xs);
+  font-size: var(--fs-body-s);
+  color: var(--text-body);
+  transition: background-color var(--dur-fast) var(--ease-out);
 }
 
-.team-edit-controls {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.4em;
-  margin-top: 0.6em;
+.sidebar li:hover {
+  background-color: var(--surface-row-hover);
 }
 
-.team-edit-controls button,
-.team-row button {
-  padding: 0.3em 0.7em;
-}
-
-.team-row {
-  display: flex;
-  align-items: center;
-  gap: 0.4em;
-}
-
-.team-row input[type="text"] {
+/* The lineup sheet: a pale-green panel over the turf. The field's yard lines
+ * fade in from the crown and are gone before the first control, so no marking
+ * sits behind an input — the pattern belongs to the header, not the form.
+ * Everything at body scale lives here, dark-on-light. */
+.container {
+  position: relative;
   flex: 1;
   min-width: 0;
-  padding: 0.3em 0.5em;
-}
-
-.team-row input[type="number"] {
-  width: 70px;
-  padding: 0.3em 0.5em;
-}
-
-.sidebar .status-message {
-  margin-top: 0.8em;
-  width: auto;
-  max-width: none;
-}
-
-.container {
-  flex: 1;
   margin: 0;
-  padding-top: 2em;
+  padding: 0 var(--space-8) var(--space-9);
   display: flex;
   flex-direction: column;
+  align-items: stretch;
   justify-content: flex-start;
+  gap: 0;
   text-align: center;
+  overflow: hidden;
+  background-color: var(--turf-sheet);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-2), inset 0 0 0 1px rgba(255, 255, 255, 0.7);
 }
 
+/* Yard lines, masked to a short fade under the crown. Painted by a pseudo-element
+ * rather than on .container so the mask cannot affect the panel's own children. */
+.container::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 190px;
+  background-image: var(--turf-sheet-lines);
+  -webkit-mask-image: linear-gradient(to bottom, #000 0, transparent 100%);
+  mask-image: linear-gradient(to bottom, #000 0, transparent 100%);
+  pointer-events: none;
+  z-index: 0;
+}
+
+.container > * {
+  position: relative;
+  z-index: 1;
+}
+
+/* A visible scrollbar in the brand's greens, so a group peeking past the foot of
+   the window reads as "more below" rather than as a clipping bug. */
+.container {
+  scrollbar-color: var(--turf-300) var(--turf-sheet-sunken);
+}
+
+.container::-webkit-scrollbar {
+  width: 10px;
+}
+
+.container::-webkit-scrollbar-track {
+  background: var(--turf-sheet-sunken);
+}
+
+.container::-webkit-scrollbar-thumb {
+  background: var(--turf-300);
+  border: 3px solid var(--turf-sheet-sunken);
+  border-radius: var(--radius-pill);
+}
+
+/* Crown: a compact deep-green header carrying the brand lockup, the utilities and
+ * the update status, so the two panels read as one continuous field element.
+ *
+ * The green is painted on those elements individually and stretched to the panel
+ * edges — NOT as one fixed-height band behind them. main.js unhides
+ * #update-status at runtime, which makes the header taller; a constant-height
+ * band would stay put and drop white type onto the pale sheet (1.07:1).
+ * Painting per element means the green is always exactly as tall as its content.
+ *
+ * This is why .container sets `gap: 0`: flex gap cannot be painted, so a gap
+ * between the bands would show pale stripes through the crown. Spacing below the
+ * crown comes from each child's own margin-top instead. */
+.top-bar,
+.container > #update-status {
+  margin-inline: calc(var(--space-8) * -1);
+  padding-inline: var(--space-8);
+  background-color: var(--turf-chrome);
+}
+
+/* ── Config grid ────────────────────────────────────────── */
+/* Two columns of labelled groups instead of one centred stack: this is a desktop
+ * window, and a single 520px column left dead margins either side and roughly
+ * doubled the scroll. Collapses to one column under 900px. */
+/* The settings area drops to --turf-100 so the white group panels actually read
+   as raised cards — against --turf-050 the two tones were nearly identical. */
+.config-grid {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: start;
+  gap: var(--space-6);
+  margin-inline: calc(var(--space-8) * -1);
+  padding: var(--space-8);
+  background-color: var(--turf-sheet-sunken);
+  border-top: 1px solid var(--turf-sheet-line);
+  text-align: left;
+}
+
+/* Full-width groups: these hold wide content (date ranges, a path field) and
+ * read better spanning both columns. */
+.excluded-dates,
+.output-group {
+  grid-column: 1 / -1;
+}
+
+@media (max-width: 900px) {
+  .config-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* Narrow windows: a 148px label column plus a 170px date field does not fit a
+ * half-width track much under 1100px, and the Tauri window is resizable. Stack
+ * the label above its control rather than letting the row overflow its group. */
+@media (max-width: 1080px) {
+  .config-grid .field {
+    flex-wrap: wrap;
+    gap: var(--space-3) var(--space-4);
+  }
+
+  .config-grid .field label {
+    flex: 0 0 100%;
+    text-align: left;
+  }
+}
+
+/* The generate action and its result, on their own centred line under the grid. */
+.generate-bar {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  margin-inline: calc(var(--space-8) * -1);
+  padding: var(--space-8);
+  background-color: var(--turf-sheet-sunken);
+}
+
+/* The whole header is one compact band: crest + wordmark left, utilities right.
+ * A single crest, never a mirrored pair — two identical marks flanking the title
+ * reads as a rendering fault, and that banner cost ~230px of a form-heavy window.
+ * The crown's bottom edge and hash rule live here, on the header's last element,
+ * so they always sit under it however tall the header grows. */
 .top-bar {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  width: 100%;
+  gap: var(--space-6);
+  padding-top: var(--space-5);
+  padding-bottom: var(--space-5);
+  border-bottom: var(--line-w-heavy) solid var(--chalk-white-strong);
+  background-image: var(--turf-hashes);
+  background-size: 100% var(--line-w-heavy);
+  background-position: 0 calc(100% - 8px);
+  background-repeat: repeat-x;
 }
 
-.language-toggle {
-  padding: 0.4em 0.8em;
-}
-
-.changelog-toggle {
-  padding: 0.4em 0.8em;
-}
-
-.logo {
-  height: 6em;
-  padding: 1.5em;
-  will-change: filter;
-  transition: 0.75s;
-}
-
-.logo.tauri:hover {
-  filter: drop-shadow(0 0 2em #24c8db);
-}
-
-.row {
+.brand {
   display: flex;
-  justify-content: center;
   align-items: center;
+  gap: var(--space-5);
+  min-width: 0;
 }
 
+.brand h1 {
+  font-size: var(--fs-display-m);
+  line-height: var(--lh-display-m);
+  color: var(--text-on-turf);
+  white-space: nowrap;
+}
+
+.top-bar-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+}
+
+/* White containment tile: the crest is black line art and the crown is deep green. */
+.brand .logo {
+  height: 34px;
+  width: 34px;
+  padding: var(--space-2);
+  background-color: var(--bandit-white);
+  border-radius: var(--radius-xs);
+  box-sizing: content-box;
+}
+
+/* The crest is black line art: it needs a light ground and no filters. */
+.logo {
+  height: 64px;
+  width: 64px;
+  padding: 0;
+  object-fit: contain;
+  will-change: auto;
+  transition: none;
+}
+
+.logo.bandits:hover,
+.logo.vanilla:hover,
+.logo.tauri:hover {
+  filter: none;
+}
+
+/* ── Controls ───────────────────────────────────────────── */
+input,
+button,
+select {
+  font-family: var(--font-sans);
+  font-size: var(--fs-body-m);
+  font-weight: var(--fw-regular);
+  border-radius: var(--radius-field);
+  border: 1px solid var(--turf-sheet-line);
+  padding: 0 10px;
+  height: var(--field-h);
+  color: var(--text-body);
+  background-color: var(--surface-card);
+  box-shadow: var(--shadow-inset-field);
+  transition: var(--transition-control);
+  outline: none;
+}
+
+input[type="date"],
+input[type="number"],
+#output-folder {
+  font-family: var(--font-mono);
+  font-size: var(--fs-mono-m);
+  font-weight: var(--fw-medium);
+}
+
+input[type="number"] {
+  width: 74px;
+  text-align: center;
+  -moz-appearance: textfield;
+}
+
+/* WebKit keeps its spin buttons unless the pseudo-elements are cleared, and
+   Tauri runs on WKWebView / WebView2 — exactly the engines that still paint
+   them. Left in, they overlap the centred mono value in every hh:mm pair. */
+input[type="number"]::-webkit-inner-spin-button,
+input[type="number"]::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+input[type="date"] {
+  width: 170px;
+  max-width: 100%;
+}
+
+input:focus,
+select:focus {
+  border-color: var(--bandit-red);
+  box-shadow: var(--focus-ring);
+}
+
+input[readonly] {
+  background-color: var(--turf-sheet-sunken);
+  color: var(--text-body);
+  cursor: default;
+}
+
+/* Red is the system's single "active" colour: checked fill, hover border and
+   focus ring all use it, so it never looks incidental. */
+input[type="checkbox"] {
+  height: 17px;
+  width: 17px;
+  padding: 0;
+  margin: 0;
+  accent-color: var(--bandit-red);
+  box-shadow: none;
+  cursor: pointer;
+}
+
+input[type="checkbox"]:hover {
+  border-color: var(--bandit-red);
+}
+
+input[type="checkbox"]:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+button:focus-visible,
+select:focus-visible {
+  border-color: var(--bandit-red);
+  box-shadow: var(--focus-ring);
+}
+
+select {
+  padding-right: var(--space-7);
+  cursor: pointer;
+  appearance: none;
+  -webkit-appearance: none;
+  /* Chevron drawn with a gradient pair so no icon asset is needed. */
+  background-image: linear-gradient(45deg, transparent 50%, var(--text-muted) 50%),
+    linear-gradient(135deg, var(--text-muted) 50%, transparent 50%);
+  background-position: calc(100% - 15px) center, calc(100% - 10px) center;
+  background-size: 5px 5px, 5px 5px;
+  background-repeat: no-repeat;
+}
+
+/* Buttons — condensed uppercase, secondary by default. */
+button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-3);
+  height: var(--field-h);
+  padding: 0 14px;
+  font-family: var(--font-display);
+  font-weight: var(--fw-semibold);
+  font-size: 13px;
+  line-height: 1;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+  color: var(--text-heading);
+  background-color: var(--surface-card);
+  border: 1px solid var(--turf-sheet-line);
+  border-radius: var(--radius-field);
+  box-shadow: none;
+  cursor: pointer;
+}
+
+button:hover {
+  background-color: var(--turf-sheet-sunken);
+  border-color: var(--turf-sheet-line-strong);
+}
+
+button:active {
+  background-color: var(--turf-200);
+  transform: scale(var(--press-scale));
+}
+
+button:focus-visible {
+  border-color: var(--bandit-red);
+  box-shadow: var(--focus-ring);
+}
+
+/* The one committing action in the window. */
+#generate-schedule {
+  position: relative;
+  height: var(--field-h-lg);
+  padding: 0 var(--space-8);
+  margin-top: var(--space-8);
+  font-size: 15px;
+  color: var(--text-on-accent);
+  background-color: var(--action-primary);
+  border-color: var(--action-primary);
+  /* Goal line: a turf rule directly under the scoring action. */
+  box-shadow: 0 6px 0 -4px var(--turf-700);
+}
+
+#generate-schedule:hover {
+  background-color: var(--action-primary-hover);
+  border-color: var(--action-primary-hover);
+}
+
+#generate-schedule:active {
+  background-color: var(--action-primary-active);
+  border-color: var(--action-primary-active);
+}
+
+/* Top-bar utilities sit on the green crown, so they invert: white type, outlined. */
+.changelog-toggle {
+  padding: 0 var(--space-5);
+  height: 30px;
+  font-size: var(--fs-body-s);
+  color: var(--text-on-turf);
+  background-color: transparent;
+  border-color: var(--border-on-turf);
+}
+
+.changelog-toggle:hover {
+  color: var(--text-on-turf);
+  background-color: rgba(255, 255, 255, 0.12);
+  border-color: rgba(255, 255, 255, 0.38);
+}
+
+/* Height and type size match .changelog-toggle exactly — the two sit side by
+   side in the header, and a mismatch there reads as a bug. */
+.language-toggle {
+  height: 30px;
+  width: 132px;
+  font-size: var(--fs-body-s);
+  color: var(--text-on-turf);
+  background-color: transparent;
+  border-color: var(--border-on-turf);
+  background-image: linear-gradient(45deg, transparent 50%, var(--text-on-turf) 50%),
+    linear-gradient(135deg, var(--text-on-turf) 50%, transparent 50%);
+}
+
+.language-toggle option {
+  color: var(--text-body);
+  background-color: var(--surface-card);
+}
+
+/* #update-status is part of the crown when the updater reports, so it inverts
+ * and drops the chip framing — it is a line in the header, not a card. */
+.container > #update-status {
+  margin-top: 0;
+  padding-top: var(--space-2);
+  padding-bottom: var(--space-2);
+  width: auto;
+  max-width: none;
+  min-height: 0;
+  color: var(--text-on-turf);
+  border: 0;
+  border-radius: 0;
+}
+
+/* ── Field rows ─────────────────────────────────────────── */
+/* Rows fill their group rather than a fixed 520px: inside a grid column the
+ * width comes from the track. Inputs are pinned `flex: none` because a flex row
+ * in a shrink-to-fit context otherwise collapses them to min-content. */
 .field {
   display: flex;
   flex-direction: row;
   align-items: center;
-  gap: 0.6em;
-}
-
-.status-message {
-  margin-top: 1.5em;
-  min-height: 1.2em;
+  justify-content: flex-start;
+  gap: var(--space-4);
   width: 100%;
-  max-width: 400px;
-  padding: 0.6em 1em;
-  border: 1px solid #d9d9d9;
-  border-radius: 8px;
-  background-color: #ffffff;
-  color: #0f0f0f;
 }
 
-.status-message.success {
-  color: #1a7f37;
-  font-weight: 500;
+.field + .field {
+  margin-top: var(--space-5);
 }
 
-.status-message.error {
-  color: #c0392b;
-  font-weight: 500;
+.field input,
+.field button,
+.field select {
+  flex: none;
 }
 
-.changelog-error {
-  color: #c0392b;
-  font-weight: 500;
+.field label {
+  flex: 0 0 var(--label-col, 148px);
+  /* Left, not right: ragged-left labels leave a pool of dead space against the
+     group edge and read as misaligned. */
+  text-align: left;
+  font-family: var(--font-sans);
+  font-size: var(--fs-caption);
+  font-weight: var(--fw-semibold);
+  line-height: var(--lh-caption);
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+  color: var(--text-muted);
 }
 
+/* The hh : mm separator between the two number inputs. */
+.field > span {
+  font-family: var(--font-mono);
+  font-size: var(--fs-mono-m);
+  color: var(--text-subtle);
+}
+
+.field:has(#single-game-per-week) label {
+  flex: 0 0 auto;
+}
+
+#output-folder {
+  flex: 1 1 auto;
+  min-width: 0;
+  width: auto;
+  font-size: var(--fs-mono-s);
+  text-overflow: ellipsis;
+}
+
+/* ── Grouped settings ───────────────────────────────────── */
+/* Zones marked out on the sheet: white ground, green edges. Every settings group
+ * is one of these — the seven rows that used to sit loose above `game-days` are
+ * now three named sections (season window, slot mechanics, break configuration), so the
+ * page is scannable by concept instead of read line by line. */
+.config-group,
 .game-days,
 .excluded-dates {
-  margin-top: 1.5em;
-  border: 1px solid #d9d9d9;
-  border-radius: 8px;
-  padding: 0.8em 1em;
+  min-width: 0;
+  margin: 0;
+  padding: var(--space-5) var(--panel-pad) var(--panel-pad);
+  background-color: var(--turf-sheet-raised);
+  border: 1px solid var(--turf-sheet-line);
+  border-top: var(--line-w-heavy) solid var(--turf-700);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-2);
 }
 
+.config-group legend,
 .game-days legend,
 .excluded-dates legend {
-  padding: 0 0.4em;
-  font-weight: 500;
+  padding: var(--space-2) var(--space-5);
+  background-color: var(--turf-chrome);
+  color: var(--text-on-turf);
+  border-radius: var(--radius-xs);
+  font-family: var(--font-sans);
+  font-size: var(--fs-caption);
+  font-weight: var(--fw-semibold);
+  letter-spacing: var(--tracking-eyebrow);
+  text-transform: uppercase;
 }
 
-.excluded-date-row {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0.4em;
-  margin-bottom: 0.4em;
-}
-
-.excluded-date-row button {
-  padding: 0.3em 0.7em;
-}
-
+/* A grid, not a wrapping row: flex spacing follows label length, so "Monday" and
+   "Wednesday" never line up and the set cannot be scanned as columns. */
 .day-options {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: 0.4em 1.2em;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--space-4) var(--space-5);
+  margin-top: var(--space-2);
+}
+
+@media (max-width: 1080px) {
+  .day-options {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 .day-options label {
   display: flex;
   align-items: center;
-  gap: 0.3em;
-}
-
-.field label {
-  font-weight: 500;
-}
-
-a {
-  font-weight: 500;
-  color: #646cff;
-  text-decoration: inherit;
-}
-
-a:hover {
-  color: #535bf2;
-}
-
-h1 {
-  text-align: center;
-}
-
-input,
-button {
-  border-radius: 8px;
-  border: 1px solid transparent;
-  padding: 0.6em 1.2em;
-  font-size: 1em;
-  font-weight: 500;
-  font-family: inherit;
-  color: #0f0f0f;
-  background-color: #ffffff;
-  transition: border-color 0.25s;
-  box-shadow: 0 2px 2px rgba(0, 0, 0, 0.2);
-}
-
-button {
+  gap: var(--space-4);
+  font-size: var(--fs-body-s);
+  color: var(--text-body);
   cursor: pointer;
 }
 
-button:hover {
-  border-color: #396cd8;
-}
-button:active {
-  border-color: #396cd8;
-  background-color: #e8e8e8;
-}
-
-input,
-button {
-  outline: none;
+.excluded-date-row {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: var(--space-4);
+  margin-bottom: var(--space-4);
 }
 
-#greet-input {
-  margin-right: 5px;
+/* The invalid-range message from collectExcludedDates(). */
+.excluded-dates-error {
+  margin-bottom: var(--space-4);
+  font-size: var(--fs-caption);
+  font-weight: var(--fw-medium);
+  color: var(--status-danger);
 }
 
+.excluded-date-row span {
+  font-size: var(--fs-body-s);
+  font-weight: var(--fw-medium);
+  color: var(--text-muted);
+}
+
+/* Remove-row buttons: square, quiet, red only on hover. */
+.excluded-date-row button,
+.team-row button {
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  font-family: var(--font-mono);
+  font-size: 16px;
+  color: var(--text-muted);
+  background-color: transparent;
+  border-color: transparent;
+}
+
+.excluded-date-row button:hover,
+.team-row button:hover {
+  color: var(--status-danger);
+  background-color: var(--status-danger-soft);
+  border-color: transparent;
+}
+
+#add-excluded-date {
+  height: 30px;
+  font-size: var(--fs-body-s);
+}
+
+/* ── Teams sidebar ──────────────────────────────────────── */
+.team-edit-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  margin-top: var(--space-6);
+}
+
+.team-edit-controls button,
+#browse-teams,
+#new-teams-file {
+  height: 30px;
+  padding: 0 12px;
+  font-size: var(--fs-body-s);
+}
+
+#browse-teams,
+#new-teams-file {
+  width: 100%;
+}
+
+#new-teams-file {
+  margin-top: var(--space-3);
+}
+
+/* Save is the sidebar's committing action. */
+#save-teams {
+  color: var(--text-on-accent);
+  background-color: var(--action-primary);
+  border-color: var(--action-primary);
+}
+
+#save-teams:hover {
+  background-color: var(--action-primary-hover);
+  border-color: var(--action-primary-hover);
+}
+
+#cancel-edit-teams {
+  color: var(--text-muted);
+  background-color: transparent;
+  border-color: transparent;
+}
+
+#cancel-edit-teams:hover {
+  color: var(--text-heading);
+  background-color: var(--ink-100);
+}
+
+.team-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2) 0;
+  margin: 0;
+}
+
+.team-row input[type="text"] {
+  flex: 1;
+  min-width: 0;
+  height: 28px;
+  padding: 0 6px;
+  font-family: var(--font-sans);
+  font-size: var(--fs-body-s);
+}
+
+.team-row input[type="number"] {
+  width: 58px;
+  height: 28px;
+  padding: 0 6px;
+  font-size: var(--fs-mono-s);
+}
+
+.team-row:hover {
+  background-color: transparent;
+}
+
+/* ── Status messages ────────────────────────────────────── */
+.status-message {
+  margin-top: var(--space-7);
+  min-height: 36px;
+  width: 100%;
+  max-width: 460px;
+  padding: var(--space-4) var(--space-6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: var(--fs-body-s);
+  line-height: var(--lh-body-s);
+  text-wrap: pretty;
+  color: var(--text-body);
+  background-color: var(--surface-card);
+  border: 1px solid var(--turf-sheet-line);
+  border-radius: var(--radius-sm);
+}
+
+.status-message:empty {
+  border-color: transparent;
+  background-color: transparent;
+  min-height: 36px;
+}
+
+.status-message.success {
+  font-weight: var(--fw-medium);
+  color: var(--status-success);
+  background-color: var(--status-success-soft);
+  border-color: var(--status-success);
+}
+
+.status-message.error {
+  font-weight: var(--fw-medium);
+  color: var(--status-danger);
+  background-color: var(--status-danger-soft);
+  border-color: var(--status-danger);
+}
+
+.sidebar .status-message {
+  margin-top: var(--space-6);
+  width: auto;
+  max-width: none;
+  justify-content: flex-start;
+  text-align: left;
+  font-size: var(--fs-caption);
+}
+
+.changelog-error {
+  font-weight: var(--fw-medium);
+  color: var(--status-danger);
+}
+
+/* ── Changelog modal ────────────────────────────────────── */
 .modal {
   position: fixed;
   inset: 0;
-  background-color: rgba(0, 0, 0, 0.5);
+  z-index: 40;
+  background-color: var(--overlay-scrim);
+  backdrop-filter: var(--blur-scrim);
 }
 
 .modal:not([hidden]) {
@@ -258,59 +892,180 @@ button {
 
 .modal-content {
   position: relative;
-  max-width: 32rem;
+  width: 32rem;
+  max-width: calc(100% - var(--space-9));
   max-height: 80vh;
   overflow-y: auto;
-  padding: 1.5rem;
-  border-radius: 8px;
-  background-color: #ffffff;
+  padding: var(--space-8);
+  text-align: left;
+  background-color: var(--surface-card);
+  border-radius: var(--radius-card);
+  border-top: 3px solid var(--turf-700);
+  box-shadow: var(--shadow-3);
+}
+
+.modal-content h2 {
+  margin: 0 0 var(--space-6);
+  padding: 0 var(--space-9) var(--space-5) 0;
+  border-bottom: var(--line-w-heavy) solid var(--turf-700);
+  font-family: var(--font-display);
+  font-weight: var(--fw-bold);
+  font-size: var(--fs-display-m);
+  line-height: var(--lh-display-m);
+  letter-spacing: var(--tracking-display);
+  text-transform: uppercase;
+  color: var(--text-heading);
 }
 
 .modal-close {
   position: absolute;
-  top: 0.5rem;
-  right: 0.75rem;
+  top: var(--space-5);
+  right: var(--space-5);
+  width: 28px;
+  height: 28px;
   padding: 0;
-  border: none;
-  background: none;
-  font-size: 1.5rem;
+  font-family: var(--font-sans);
+  font-size: 20px;
   line-height: 1;
+  color: var(--text-muted);
+  background: none;
+  border: none;
+  box-shadow: none;
   cursor: pointer;
 }
 
+.modal-close:hover {
+  color: var(--status-danger);
+  background-color: var(--status-danger-soft);
+}
+
+.changelog-version {
+  margin-bottom: var(--space-7);
+}
+
 .changelog-version h3 {
-  margin-bottom: 0.25rem;
+  margin: 0 0 var(--space-2);
+  font-family: var(--font-display);
+  font-weight: var(--fw-semibold);
+  font-size: var(--fs-display-s);
+  line-height: var(--lh-display-s);
+  letter-spacing: var(--tracking-display);
+  text-transform: uppercase;
+  color: var(--text-heading);
 }
 
 .changelog-version h4 {
-  margin: 0.5rem 0 0.25rem;
-  font-size: 0.9rem;
+  margin: var(--space-5) 0 var(--space-2);
+  font-family: var(--font-sans);
+  font-size: var(--fs-caption);
+  font-weight: var(--fw-semibold);
+  letter-spacing: var(--tracking-eyebrow);
+  text-transform: uppercase;
+  color: var(--text-muted);
 }
 
 .changelog-version ul {
-  margin: 0 0 0.5rem 1.25rem;
+  margin: 0 0 var(--space-5) var(--space-7);
+  padding: 0;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    color: #f6f6f6;
-    background-color: #2f2f2f;
-  }
+.changelog-version li {
+  margin-bottom: var(--space-2);
+  font-size: var(--fs-body-s);
+  line-height: var(--lh-body-s);
+  color: var(--text-body);
+}
 
-  a:hover {
-    color: #24c8db;
-  }
 
-  input,
-  button {
-    color: #ffffff;
-    background-color: #0f0f0f98;
-  }
-  button:active {
-    background-color: #0f0f0f69;
-  }
+/* ─────────────────────────────────────────────────────────────────────────────
+ * Turf overrides for the teams column.
+ *
+ * These MUST come last. The base .sidebar / .sidebar li / button rules above have
+ * equal specificity, so an earlier copy of this block loses the cascade and team
+ * names render dark-on-green.
+ * ───────────────────────────────────────────────────────────────────────────── */
+.sidebar h2 {
+  color: var(--text-on-turf);
+}
 
-  .modal-content {
-    background-color: #2f2f2f;
-  }
+.sidebar li {
+  color: var(--text-on-turf);
+}
+
+/* main.js writes a load failure into #teams-list as bare text, not an <li>. */
+#teams-list {
+  color: var(--text-on-turf);
+}
+
+.sidebar li:hover {
+  background-color: rgba(255, 255, 255, 0.08);
+}
+
+/* Controls on turf: outlined in white rather than filled, so the column reads as
+ * chrome. The two committing actions keep their colour. */
+.sidebar button {
+  color: var(--text-on-turf);
+  background-color: transparent;
+  border-color: var(--border-on-turf);
+}
+
+.sidebar button:hover {
+  color: var(--text-on-turf);
+  background-color: rgba(255, 255, 255, 0.12);
+  border-color: rgba(255, 255, 255, 0.38);
+}
+
+.sidebar button:active {
+  background-color: rgba(255, 255, 255, 0.06);
+}
+
+.sidebar #save-teams {
+  color: var(--text-on-accent);
+  background-color: var(--action-primary);
+  border-color: var(--action-primary);
+}
+
+.sidebar #save-teams:hover {
+  background-color: var(--action-primary-hover);
+  border-color: var(--action-primary-hover);
+}
+
+.sidebar #cancel-edit-teams {
+  color: var(--text-on-turf-muted);
+  border-color: transparent;
+}
+
+.sidebar #cancel-edit-teams:hover {
+  color: var(--text-on-turf);
+  background-color: rgba(255, 255, 255, 0.12);
+}
+
+/* Editable team rows keep light fields — dark-on-light, as everywhere else. */
+.sidebar .team-row input {
+  color: var(--text-body);
+  background-color: var(--surface-card);
+}
+
+.sidebar .team-row button {
+  color: var(--text-on-turf-muted);
+  border-color: transparent;
+}
+
+.sidebar .team-row button:hover {
+  color: var(--text-on-accent);
+  background-color: var(--status-danger);
+}
+
+/* Status chips stay light so their text contrast is unchanged. */
+.sidebar .status-message {
+  color: var(--text-body);
+  background-color: var(--surface-card);
+  border-color: transparent;
+}
+
+/* ...but an empty chip must stay invisible — the base `:empty` rule sits earlier
+ * in the file and would otherwise lose to the line above. */
+.sidebar .status-message:empty {
+  background-color: transparent;
+  border-color: transparent;
 }

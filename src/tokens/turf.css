@@ -1,0 +1,63 @@
+/* Turf — the field rendered in field colour rather than implied by chalk.
+ *
+ * Greens are mown-grass, deliberately desaturated so the club's red still reads as
+ * the loudest thing on screen. Chalk becomes white, as it is on a real field.
+ *
+ * Contrast rule: turf is a GROUND for white type at heading scale or for opaque
+ * light panels. Body copy and form labels never sit directly on it — they sit on
+ * the light sheet above it.
+ */
+:root{
+/* Field geometry — the measurements every marking layer is built from */
+--yard:44px;/* @kind spacing */       /* one yard-line interval */
+--five-yard:220px;/* @kind spacing */ /* every fifth line, drawn heavier */
+--hash-len:9px;/* @kind spacing */    /* inbound hash-mark row height */
+--line-w:1px;/* @kind spacing */
+--line-w-heavy:2px;/* @kind spacing */
+
+/* Light sheet — the pale end of the grass ramp, for the panel the form sits on */
+--turf-050:#F3F7F3;/* @kind color */
+--turf-100:#E7EFE8;/* @kind color */
+--turf-200:#D3E0D6;/* @kind color */
+--turf-300:#A8BFAE;/* @kind color */
+
+/* Mown grass — two adjacent tones make the striping */
+--turf-900:#0C2415;/* @kind color */
+--turf-800:#123A20;/* @kind color */
+--turf-700:#17482A;/* @kind color */
+--turf-600:#1E5934;/* @kind color */
+--turf-500:#24633B;/* @kind color */
+
+/* Chalk on turf is white, not black */
+--chalk-white-strong:rgba(255,255,255,.52);/* @kind color */
+--chalk-white:rgba(255,255,255,.30);/* @kind color */
+--chalk-white-faint:rgba(255,255,255,.14);/* @kind color */
+
+/* Roles */
+--turf-ground:var(--turf-600);
+--turf-chrome:var(--turf-800);
+--turf-endzone:var(--turf-900);
+--turf-sheet:var(--turf-050);
+--turf-sheet-raised:#FFFFFF;/* @kind color */
+--turf-sheet-sunken:var(--turf-100);
+--turf-sheet-line:var(--turf-200);
+--turf-sheet-line-strong:var(--turf-300);
+--text-on-turf:#FFFFFF;/* @kind color */
+--text-on-turf-muted:rgba(255,255,255,.66);/* @kind color */
+--border-on-turf:rgba(255,255,255,.20);/* @kind color */
+
+/* Mown stripes: alternating bands one five-yard interval wide. */
+--turf-stripes:repeating-linear-gradient(to right,var(--turf-600) 0 var(--five-yard),var(--turf-500) var(--five-yard) calc(var(--five-yard) * 2));
+
+/* White yard lines, light every yard and heavier every fifth. */
+--turf-lines:repeating-linear-gradient(to right,var(--chalk-white) 0 var(--line-w),transparent var(--line-w) var(--yard)),repeating-linear-gradient(to right,var(--chalk-white-strong) 0 var(--line-w),transparent var(--line-w) var(--five-yard));
+
+/* Faint green yard lines for the light sheet — the field showing through the
+ * paper, not chalk on grass. Low enough not to disturb body text above it. */
+--turf-sheet-lines:repeating-linear-gradient(to right,rgba(23,72,42,.055) 0 var(--line-w),transparent var(--line-w) var(--yard)),repeating-linear-gradient(to right,rgba(23,72,42,.10) 0 var(--line-w),transparent var(--line-w) var(--five-yard));
+--turf-sheet-hashes:repeating-linear-gradient(to right,rgba(23,72,42,.16) 0 var(--line-w),transparent var(--line-w) var(--yard));
+
+/* Hash-mark row and sideline, in white. */
+--turf-hashes:repeating-linear-gradient(to right,var(--chalk-white-strong) 0 var(--line-w),transparent var(--line-w) var(--yard));
+--turf-sideline:repeating-linear-gradient(to bottom,var(--chalk-white-strong) 0 var(--line-w),transparent var(--line-w) 12px);
+}

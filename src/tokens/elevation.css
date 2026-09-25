@@ -1,0 +1,11 @@
+:root{
+--shadow-0:none;
+--shadow-1:0 1px 2px rgba(10,10,11,.08);
+--shadow-2:0 2px 6px rgba(10,10,11,.10),0 1px 2px rgba(10,10,11,.06);
+--shadow-3:0 12px 32px rgba(10,10,11,.18);
+--shadow-window:0 24px 64px rgba(10,10,11,.34);
+--shadow-inset-field:inset 0 1px 1px rgba(10,10,11,.05);
+--shadow-card:var(--shadow-1);
+--shadow-popover:var(--shadow-3);
+--blur-scrim:blur(2px); /* @kind other */
+}
