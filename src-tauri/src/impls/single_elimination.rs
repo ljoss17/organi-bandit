@@ -58,29 +58,6 @@ impl Tournament for SingleElimination {
             }
         }
 
-        // The day's play has to finish before midnight. The bracket fills a
-        // day and spills onto the next, so with a break the bound that
-        // matters is the window after it, which mirrors the one before it.
-        // Without a break the bracket stops at the scheduler's own hard
-        // stop, and the only way off the end of the day is the first slot
-        // itself: reach the next one and every later slot has already been
-        // pushed onto the next day. GameTime addition wraps at 24h, so a
-        // window reaching midnight puts games in the small hours of the
-        // same day instead of on the day after. The break checks above
-        // guarantee the subtraction is safe.
-        let day_end = if time_configuration.has_break() {
-            time_configuration.end_break().as_minutes()
-                + (time_configuration.start_break().as_minutes()
-                    - time_configuration.start_time().as_minutes())
-        } else {
-            time_configuration.start_time().as_minutes()
-                + time_configuration.interval_between_games().as_minutes()
-        };
-        if day_end >= 24 * 60 {
-            return Err(AppError::ScheduleRunsPastMidnight(
-                *time_configuration.start_time(),
-            ));
-        }
         Ok(())
     }
 
@@ -315,7 +292,9 @@ mod tests {
             GameTime::new(13, 30).unwrap(),
             GameTime::new(1, 0).unwrap(),
             GameTime::new(0, 30).unwrap(),
-        );
+            GameTime::new(17, 0).unwrap(),
+        )
+        .unwrap();
         let date_configuration =
             DateConfiguration::new(start_date(), vec![Weekday::Sat], vec![], false);
         let season_config = SeasonConfig::new(time_configuration, date_configuration, 1);
@@ -324,30 +303,6 @@ mod tests {
         let result = single_elimination.validate_parameters(&teams(), &season_config);
 
         assert!(result.is_ok(), "passed parameters should be valid");
-    }
-
-    // Test case: a break ending at 23:30 leaves the window after it running
-    // past the end of the day. Without this check the bracket was still
-    // produced, one game per day, silently spread over weeks.
-    #[test]
-    fn validate_parameters_rejects_a_break_ending_too_late_in_the_day() {
-        let time_configuration = TimeConfiguration::new(
-            GameTime::new(9, 0).unwrap(),
-            GameTime::new(12, 0).unwrap(),
-            GameTime::new(23, 30).unwrap(),
-            GameTime::new(1, 0).unwrap(),
-            GameTime::new(0, 30).unwrap(),
-        );
-        let date_configuration =
-            DateConfiguration::new(start_date(), vec![Weekday::Sat], vec![], false);
-        let season_config = SeasonConfig::new(time_configuration, date_configuration, 1);
-
-        let result = SingleElimination::new(false).validate_parameters(&teams(), &season_config);
-
-        assert!(
-            matches!(result, Err(AppError::ScheduleRunsPastMidnight(_))),
-            "{result:?}"
-        );
     }
 
     // Test case: the break sits before play even starts, so the bracket
@@ -362,7 +317,9 @@ mod tests {
             GameTime::new(8, 30).unwrap(),
             GameTime::new(1, 0).unwrap(),
             GameTime::new(0, 30).unwrap(),
-        );
+            GameTime::new(17, 0).unwrap(),
+        )
+        .unwrap();
         let date_configuration =
             DateConfiguration::new(start_date(), vec![Weekday::Sat], vec![], false);
         let season_config = SeasonConfig::new(time_configuration, date_configuration, 1);
@@ -388,7 +345,9 @@ mod tests {
             GameTime::new(13, 0).unwrap(),
             GameTime::new(1, 0).unwrap(),
             GameTime::new(0, 30).unwrap(),
-        );
+            GameTime::new(17, 0).unwrap(),
+        )
+        .unwrap();
         let date_configuration =
             DateConfiguration::new(start_date(), vec![Weekday::Sat], vec![], false);
         let season_config = SeasonConfig::new(time_configuration, date_configuration, 1);
@@ -409,7 +368,9 @@ mod tests {
             GameTime::new(12, 0).unwrap(),
             GameTime::new(1, 0).unwrap(),
             GameTime::new(0, 30).unwrap(),
-        );
+            GameTime::new(17, 0).unwrap(),
+        )
+        .unwrap();
         let date_configuration =
             DateConfiguration::new(start_date(), vec![Weekday::Sat], vec![], false);
         let season_config = SeasonConfig::new(time_configuration, date_configuration, 1);
@@ -424,76 +385,6 @@ mod tests {
         );
     }
 
-    // Test case: a late start with no break at all. The second slot of the
-    // day would be 00:30, which GameTime addition renders as the small
-    // hours of the *same* date, so the bracket used to be produced with
-    // those games sitting before the ones they follow.
-    #[test]
-    fn validate_parameters_rejects_a_late_start_without_a_break() {
-        let time_configuration = TimeConfiguration::new(
-            GameTime::new(23, 30).unwrap(),
-            GameTime::new(0, 0).unwrap(),
-            GameTime::new(0, 0).unwrap(),
-            GameTime::new(0, 45).unwrap(),
-            GameTime::new(0, 15).unwrap(),
-        );
-        let date_configuration =
-            DateConfiguration::new(start_date(), vec![Weekday::Sat], vec![], false);
-        let season_config = SeasonConfig::new(time_configuration, date_configuration, 2);
-
-        let result = SingleElimination::new(false).validate_parameters(&teams(), &season_config);
-
-        assert!(
-            matches!(result, Err(AppError::ScheduleRunsPastMidnight(start)) if start == GameTime::new(23, 30).unwrap()),
-            "{result:?}"
-        );
-    }
-
-    // Test case: the slot after the first lands exactly on midnight, which
-    // GameTime addition renders as 00:00 — the start of the same day rather
-    // than the end of it, so it is no more usable than one that overshoots.
-    #[test]
-    fn validate_parameters_rejects_a_slot_landing_exactly_at_midnight_without_a_break() {
-        let time_configuration = TimeConfiguration::new(
-            GameTime::new(23, 0).unwrap(),
-            GameTime::new(0, 0).unwrap(),
-            GameTime::new(0, 0).unwrap(),
-            GameTime::new(0, 45).unwrap(),
-            GameTime::new(0, 15).unwrap(),
-        );
-        let date_configuration =
-            DateConfiguration::new(start_date(), vec![Weekday::Sat], vec![], false);
-        let season_config = SeasonConfig::new(time_configuration, date_configuration, 2);
-
-        let result = SingleElimination::new(false).validate_parameters(&teams(), &season_config);
-
-        assert!(
-            matches!(result, Err(AppError::ScheduleRunsPastMidnight(_))),
-            "{result:?}"
-        );
-    }
-
-    // An evening start is fine on its own: the scheduler's hard stop pushes
-    // what does not fit onto the next day, and nothing wraps as long as the
-    // slot after the first still falls inside the day.
-    #[test]
-    fn validate_parameters_accepts_an_evening_start_without_a_break() {
-        let time_configuration = TimeConfiguration::new(
-            GameTime::new(20, 0).unwrap(),
-            GameTime::new(0, 0).unwrap(),
-            GameTime::new(0, 0).unwrap(),
-            GameTime::new(0, 45).unwrap(),
-            GameTime::new(0, 15).unwrap(),
-        );
-        let date_configuration =
-            DateConfiguration::new(start_date(), vec![Weekday::Sat], vec![], false);
-        let season_config = SeasonConfig::new(time_configuration, date_configuration, 2);
-
-        let result = SingleElimination::new(false).validate_parameters(&teams(), &season_config);
-
-        assert!(result.is_ok(), "{result:?}");
-    }
-
     #[test]
     fn test_single_elimination_parameter_validation_rejects_too_few_teams() {
         let time_configuration = TimeConfiguration::new(
@@ -502,7 +393,9 @@ mod tests {
             GameTime::new(13, 30).unwrap(),
             GameTime::new(1, 0).unwrap(),
             GameTime::new(0, 30).unwrap(),
-        );
+            GameTime::new(17, 0).unwrap(),
+        )
+        .unwrap();
         let date_configuration =
             DateConfiguration::new(start_date(), vec![Weekday::Sat], vec![], false);
         let season_config = SeasonConfig::new(time_configuration, date_configuration, 1);
@@ -522,7 +415,9 @@ mod tests {
             GameTime::new(13, 30).unwrap(),
             GameTime::new(1, 0).unwrap(),
             GameTime::new(0, 30).unwrap(),
-        );
+            GameTime::new(17, 0).unwrap(),
+        )
+        .unwrap();
         let date_configuration =
             DateConfiguration::new(start_date(), vec![Weekday::Sat], vec![], false);
         let season_config = SeasonConfig::new(time_configuration, date_configuration, 0);
@@ -543,7 +438,9 @@ mod tests {
             GameTime::new(13, 30).unwrap(),
             GameTime::new(0, 0).unwrap(),
             GameTime::new(0, 30).unwrap(),
-        );
+            GameTime::new(17, 0).unwrap(),
+        )
+        .unwrap();
         let date_configuration =
             DateConfiguration::new(start_date(), vec![Weekday::Sat], vec![], false);
         let season_config = SeasonConfig::new(time_configuration, date_configuration, 2);
@@ -562,7 +459,9 @@ mod tests {
             GameTime::new(13, 30).unwrap(),
             GameTime::new(1, 0).unwrap(),
             GameTime::new(0, 30).unwrap(),
-        );
+            GameTime::new(17, 0).unwrap(),
+        )
+        .unwrap();
         let date_configuration =
             DateConfiguration::new(start_date(), vec![Weekday::Sat], vec![], false);
         let season_config = SeasonConfig::new(time_configuration, date_configuration, 1);
@@ -585,7 +484,9 @@ mod tests {
             GameTime::new(13, 30).unwrap(),
             GameTime::new(1, 0).unwrap(),
             GameTime::new(0, 30).unwrap(),
-        );
+            GameTime::new(17, 0).unwrap(),
+        )
+        .unwrap();
         let date_configuration =
             DateConfiguration::new(start_date(), vec![Weekday::Sat], vec![], false);
         let season_config = SeasonConfig::new(time_configuration, date_configuration, 0);
@@ -610,7 +511,9 @@ mod tests {
             GameTime::new(13, 30).unwrap(),
             GameTime::new(1, 0).unwrap(),
             GameTime::new(0, 30).unwrap(),
-        );
+            GameTime::new(17, 0).unwrap(),
+        )
+        .unwrap();
         let date_configuration = DateConfiguration::new(start_date(), vec![], vec![], false);
         let season_config = SeasonConfig::new(time_configuration, date_configuration, 1);
 
@@ -632,7 +535,9 @@ mod tests {
             GameTime::new(13, 30).unwrap(),
             GameTime::new(1, 0).unwrap(),
             GameTime::new(0, 30).unwrap(),
-        );
+            GameTime::new(17, 0).unwrap(),
+        )
+        .unwrap();
         let date_configuration =
             DateConfiguration::new(start_date(), vec![Weekday::Sat], vec![], false);
         let season_config = SeasonConfig::new(time_configuration, date_configuration, 2);
@@ -646,36 +551,7 @@ mod tests {
 
         let schedule = maybe_schedule.unwrap();
 
-        assert_schedule(&schedule, &teams(), season_config.number_fields())
-    }
-
-    #[test]
-    fn test_single_elimination_schedule_4_rounds() {
-        let time_configuration = TimeConfiguration::new(
-            GameTime::new(9, 0).unwrap(),
-            GameTime::new(12, 0).unwrap(),
-            GameTime::new(13, 30).unwrap(),
-            GameTime::new(1, 0).unwrap(),
-            GameTime::new(0, 30).unwrap(),
-        );
-        let date_configuration =
-            DateConfiguration::new(start_date(), vec![Weekday::Sat], vec![], false);
-        let season_config = SeasonConfig::new(time_configuration, date_configuration, 2);
-
-        let single_elimination = SingleElimination::new(false);
-
-        let maybe_schedule = single_elimination.compute_schedule(
-            &teams_bigger(),
-            &start_date(),
-            &season_config,
-            true,
-        );
-
-        assert!(maybe_schedule.is_ok());
-
-        let schedule = maybe_schedule.unwrap();
-
-        assert_schedule(&schedule, &teams_bigger(), season_config.number_fields())
+        assert_schedule(&schedule, &teams(), &season_config)
     }
 
     #[test]
@@ -689,7 +565,9 @@ mod tests {
             GameTime::new(13, 30).unwrap(),
             GameTime::new(1, 0).unwrap(),
             GameTime::new(0, 30).unwrap(),
-        );
+            GameTime::new(17, 0).unwrap(),
+        )
+        .unwrap();
         let date_configuration =
             DateConfiguration::new(start_date(), vec![Weekday::Sat], vec![], false);
         let season_config = SeasonConfig::new(time_configuration, date_configuration, 2);
@@ -724,7 +602,9 @@ mod tests {
         // power-of-two bracket needs 16 games) can need more distinct time
         // slots in a single day than the day's time window provides before
         // wrapping back around, colliding with a time already used earlier
-        // that same day, the same failure mode found in round_robin.rs.
+        // that same day, the same failure mode found in round_robin.rs. The
+        // hard stop is later than the 17:00 default, so the day's capacity
+        // (6 slots, the last at 18:00) comes from the configured value.
         let teams: Vec<Team> = (0..32)
             .map(|i| Team::new(&format!("T{i}"), None).unwrap())
             .collect();
@@ -734,7 +614,9 @@ mod tests {
             GameTime::new(13, 30).unwrap(),
             GameTime::new(1, 0).unwrap(),
             GameTime::new(0, 30).unwrap(),
-        );
+            GameTime::new(20, 0).unwrap(),
+        )
+        .unwrap();
         let date_configuration = DateConfiguration::new(
             start_date(),
             vec![Weekday::Wed, Weekday::Sat],
@@ -759,40 +641,16 @@ mod tests {
             "expected the schedule to actually use more than one configured weekday"
         );
 
-        assert_schedule(&schedule, &teams, season_config.number_fields());
-    }
-
-    // The large-bracket capacity test above happens to use a power-of-two
-    // team count (32, zero byes), so it never exercises round 2's
-    // bye-recipient-pairing loop (which also calls
-    // advance_if_past_hard_stop) under real field-capacity pressure. 20
-    // teams needs a bracket of 32 with 12 byes, giving round 2 real work
-    // to do under the same tight, 1-field window.
-    #[test]
-    fn test_round_2_respects_single_field_capacity() {
-        let teams: Vec<Team> = (0..20)
-            .map(|i| Team::new(&format!("T{i}"), None).unwrap())
-            .collect();
-        let time_configuration = TimeConfiguration::new(
-            GameTime::new(9, 0).unwrap(),
-            GameTime::new(12, 0).unwrap(),
-            GameTime::new(20, 0).unwrap(),
-            GameTime::new(1, 0).unwrap(),
-            GameTime::new(0, 30).unwrap(),
+        // The 18:00 slot ends at 19:00, so it only exists because the hard
+        // stop is later than 17:00.
+        assert!(
+            schedule
+                .iter()
+                .any(|game| game.get_game_time().unwrap() == GameTime::new(18, 0).unwrap()),
+            "expected the later hard stop to open up the 18:00 slot"
         );
-        let date_configuration = DateConfiguration::new(
-            start_date(),
-            vec![Weekday::Wed, Weekday::Sat],
-            vec![],
-            false,
-        );
-        let season_config = SeasonConfig::new(time_configuration, date_configuration, 1);
 
-        let schedule = SingleElimination::new(false)
-            .compute_schedule(&teams, &start_date(), &season_config, false)
-            .unwrap();
-
-        assert_schedule(&schedule, &teams, season_config.number_fields());
+        assert_schedule(&schedule, &teams, &season_config);
     }
 
     // A break window that actually falls within the game-time range, so
@@ -807,7 +665,9 @@ mod tests {
             GameTime::new(12, 30).unwrap(),
             GameTime::new(0, 45).unwrap(),
             GameTime::new(0, 15).unwrap(),
-        );
+            GameTime::new(17, 0).unwrap(),
+        )
+        .unwrap();
         let date_configuration =
             DateConfiguration::new(start_date(), vec![Weekday::Sat], vec![], false);
         let season_config = SeasonConfig::new(time_configuration, date_configuration, 2);
@@ -816,7 +676,7 @@ mod tests {
             .compute_schedule(&teams, &start_date(), &season_config, false)
             .unwrap();
 
-        assert_schedule(&schedule, &teams, season_config.number_fields());
+        assert_schedule(&schedule, &teams, &season_config);
     }
 
     #[test]
@@ -827,7 +687,9 @@ mod tests {
             GameTime::new(13, 30).unwrap(),
             GameTime::new(1, 0).unwrap(),
             GameTime::new(0, 30).unwrap(),
-        );
+            GameTime::new(17, 0).unwrap(),
+        )
+        .unwrap();
         let date_configuration =
             DateConfiguration::new(start_date(), vec![Weekday::Sat], vec![], false);
         let season_config = SeasonConfig::new(time_configuration, date_configuration, 2);
@@ -838,7 +700,7 @@ mod tests {
             .compute_schedule(&teams(), &start_date(), &season_config, false)
             .unwrap();
 
-        assert_schedule(&schedule, &teams(), season_config.number_fields());
+        assert_schedule(&schedule, &teams(), &season_config);
 
         // Anonymous mode should never leak the real team names into round 1.
         let input_teams = teams();
@@ -866,7 +728,9 @@ mod tests {
             GameTime::new(13, 30).unwrap(),
             GameTime::new(1, 0).unwrap(),
             GameTime::new(0, 30).unwrap(),
-        );
+            GameTime::new(17, 0).unwrap(),
+        )
+        .unwrap();
         let date_configuration =
             DateConfiguration::new(start_date(), vec![Weekday::Sat], vec![], false);
         let season_config = SeasonConfig::new(time_configuration, date_configuration, 2);
@@ -908,7 +772,9 @@ mod tests {
             GameTime::new(13, 30).unwrap(),
             GameTime::new(1, 0).unwrap(),
             GameTime::new(0, 30).unwrap(),
-        );
+            GameTime::new(17, 0).unwrap(),
+        )
+        .unwrap();
         let date_configuration =
             DateConfiguration::new(start_date(), vec![Weekday::Sat], vec![], false);
         let season_config = SeasonConfig::new(time_configuration, date_configuration, 2);
@@ -924,7 +790,7 @@ mod tests {
                     && game.get_away_team().get_name() != "Bye"),
             "a power-of-two team count should never need a bye"
         );
-        assert_schedule(&schedule, &teams, season_config.number_fields());
+        assert_schedule(&schedule, &teams, &season_config);
     }
 
     #[test]
@@ -936,7 +802,9 @@ mod tests {
             GameTime::new(13, 30).unwrap(),
             GameTime::new(1, 0).unwrap(),
             GameTime::new(0, 30).unwrap(),
-        );
+            GameTime::new(17, 0).unwrap(),
+        )
+        .unwrap();
         let date_configuration =
             DateConfiguration::new(start_date(), vec![Weekday::Sat], vec![], false);
         let season_config = SeasonConfig::new(time_configuration, date_configuration, 1);
@@ -945,7 +813,7 @@ mod tests {
             .compute_schedule(&teams, &start_date(), &season_config, false)
             .unwrap();
 
-        assert_schedule(&schedule, &teams, season_config.number_fields());
+        assert_schedule(&schedule, &teams, &season_config);
     }
 
     #[test]
@@ -961,7 +829,9 @@ mod tests {
             GameTime::new(13, 30).unwrap(),
             GameTime::new(1, 0).unwrap(),
             GameTime::new(0, 30).unwrap(),
-        );
+            GameTime::new(17, 0).unwrap(),
+        )
+        .unwrap();
         let date_configuration =
             DateConfiguration::new(start_date(), vec![Weekday::Sat], vec![], false);
         let season_config = SeasonConfig::new(time_configuration, date_configuration, 1);
@@ -970,7 +840,7 @@ mod tests {
             .compute_schedule(&teams, &start_date(), &season_config, false)
             .unwrap();
 
-        assert_schedule(&schedule, &teams, season_config.number_fields());
+        assert_schedule(&schedule, &teams, &season_config);
     }
 
     #[test]
@@ -989,7 +859,9 @@ mod tests {
             GameTime::new(13, 30).unwrap(),
             GameTime::new(1, 0).unwrap(),
             GameTime::new(0, 30).unwrap(),
-        );
+            GameTime::new(17, 0).unwrap(),
+        )
+        .unwrap();
         let date_configuration =
             DateConfiguration::new(start_date(), vec![Weekday::Sat], vec![], false);
         let season_config = SeasonConfig::new(time_configuration, date_configuration, 2);
@@ -1000,7 +872,7 @@ mod tests {
 
         // 6 teams -> bracket of 8 -> 2 byes (even).
         assert_eq!(schedule.iter().filter(|game| game.is_bye()).count(), 2);
-        assert_schedule(&schedule, &teams, season_config.number_fields());
+        assert_schedule(&schedule, &teams, &season_config);
     }
 
     #[test]
@@ -1009,7 +881,9 @@ mod tests {
         assert!(!SingleElimination::new(false).is_anonymous());
     }
 
-    fn assert_schedule(schedule: &[Game], teams: &[Team], number_of_fields: u32) {
+    fn assert_schedule(schedule: &[Game], teams: &[Team], season_config: &SeasonConfig) {
+        let number_of_fields = season_config.number_fields();
+        let time_configuration = season_config.time_configuration();
         let bracket_size = teams.len().next_power_of_two();
         assert_eq!(bracket_size - 1, schedule.len());
         let number_of_byes = bracket_size - teams.len();
@@ -1145,5 +1019,36 @@ mod tests {
                 .all(|value| *value <= number_of_fields),
             "too many games for a specific time"
         );
+
+        // Every game finishes by the configured hard stop. Worked in minutes
+        // so a game running past midnight can't wrap round and pass.
+        let hard_stop = time_configuration.hard_stop();
+        for game in schedule.iter().filter(|game| !game.is_bye()) {
+            let game_time = game.get_game_time().unwrap();
+            let game_ends =
+                game_time.as_minutes() + time_configuration.game_duration().as_minutes();
+            assert!(
+                game_ends <= hard_stop.as_minutes(),
+                "game at {game_time} on {} ends after the {hard_stop} hard stop",
+                game.get_game_day().date_naive()
+            );
+        }
+
+        // The bracket is laid out in playing order, so its real games never
+        // go back in time. A slot wrapping past midnight onto the start of
+        // the same day would.
+        let real_game_days: Vec<_> = schedule
+            .iter()
+            .filter(|game| !game.is_bye())
+            .map(|game| *game.get_game_day())
+            .collect();
+        for pair in real_game_days.windows(2) {
+            assert!(
+                pair[0] <= pair[1],
+                "game at {} is scheduled after a later game at {}",
+                pair[1],
+                pair[0]
+            );
+        }
     }
 }

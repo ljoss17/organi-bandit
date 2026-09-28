@@ -9,7 +9,6 @@ pub struct GameTimeScheduler<'a> {
     number_of_fields: u32,
     current_time: GameTime,
     current_games_per_time: u32,
-    hard_stop: GameTime,
 }
 
 impl<'a> GameTimeScheduler<'a> {
@@ -18,25 +17,7 @@ impl<'a> GameTimeScheduler<'a> {
         leg_start_time: &GameTime,
         number_of_fields: u32,
     ) -> Self {
-        // When this leg starts before the break (start_break -
-        // leg_start_time succeeds), mirror that leg's duration onto the
-        // other side of the break so both sides offer the same amount of
-        // daily room: hard_stop = end_break + (start_break -
-        // leg_start_time). When it doesn't (this leg already starts at or
-        // after the break), the subtraction underflows and there's nothing
-        // to mirror — this side already is the reference window, so it just
-        // keeps the real fixed boundary.
-        // With no break there is no window to mirror: both legs share one
-        // continuous run of slots, bounded only by the fixed hard stop.
         let leg_start_time = *leg_start_time;
-        let hard_stop = if time_configuration.has_break() {
-            match *time_configuration.start_break() - leg_start_time {
-                Ok(duration) => *time_configuration.end_break() + duration,
-                Err(_) => Self::default_hard_stop(),
-            }
-        } else {
-            Self::default_hard_stop()
-        };
 
         Self {
             time_configuration,
@@ -44,7 +25,6 @@ impl<'a> GameTimeScheduler<'a> {
             number_of_fields,
             current_time: leg_start_time,
             current_games_per_time: 1,
-            hard_stop,
         }
     }
 
@@ -56,18 +36,11 @@ impl<'a> GameTimeScheduler<'a> {
         self.current_games_per_time
     }
 
-    // No new game should be scheduled past this time of day. A day only has
-    // so many reasonable hours to play in, so once this is reached the
-    // remaining games for that "round" need to spill onto the next day
-    // instead of wrapping the clock back around within the same day.
-    fn default_hard_stop() -> GameTime {
-        GameTime::new(17, 0).expect("17:00 is always a valid time")
-    }
-
     // A game has to *finish* by the hard stop, not merely kick off before
     // it, so the game's own duration counts against the boundary too.
     pub fn is_past_hard_stop(&self) -> bool {
-        self.current_time + *self.time_configuration.game_duration() > self.hard_stop
+        self.current_time + *self.time_configuration.game_duration()
+            > *self.time_configuration.hard_stop()
     }
 
     // Advance the time
@@ -115,7 +88,9 @@ mod tests {
             GameTime::new(13, 30).unwrap(),
             GameTime::new(1, 0).unwrap(),
             GameTime::new(0, 30).unwrap(),
-        );
+            GameTime::new(17, 0).unwrap(),
+        )
+        .unwrap();
 
         let mut game_time_scheduler =
             GameTimeScheduler::new(&time_configuration, time_configuration.start_time(), 2);
@@ -147,7 +122,9 @@ mod tests {
             GameTime::new(13, 30).unwrap(),
             GameTime::new(1, 0).unwrap(),
             GameTime::new(0, 30).unwrap(),
-        );
+            GameTime::new(17, 0).unwrap(),
+        )
+        .unwrap();
 
         let mut game_time_scheduler =
             GameTimeScheduler::new(&time_configuration, time_configuration.start_time(), 2);
@@ -181,7 +158,9 @@ mod tests {
             GameTime::new(13, 30).unwrap(),
             GameTime::new(1, 0).unwrap(),
             GameTime::new(0, 30).unwrap(),
-        );
+            GameTime::new(17, 0).unwrap(),
+        )
+        .unwrap();
 
         let mut game_time_scheduler =
             GameTimeScheduler::new(&time_configuration, time_configuration.start_time(), 2);
@@ -212,35 +191,24 @@ mod tests {
         assert_eq!(game_time_scheduler.current_time(), &expected_next_time);
     }
 
+    // A game ending exactly at the configured hard stop still fits. Uses a
+    // hard stop other than the 17:00 default so the configured value is what
+    // is being read.
     #[test]
-    fn is_past_hard_stop_false_before_17_00() {
+    fn is_past_hard_stop_false_when_the_game_ends_at_the_hard_stop() {
         let time_configuration = TimeConfiguration::new(
-            GameTime::new(16, 30).unwrap(),
+            GameTime::new(19, 30).unwrap(),
             GameTime::new(12, 0).unwrap(),
             GameTime::new(13, 30).unwrap(),
             GameTime::new(0, 30).unwrap(),
             GameTime::new(0, 0).unwrap(),
-        );
+            GameTime::new(20, 0).unwrap(),
+        )
+        .unwrap();
 
         let game_time_scheduler =
             GameTimeScheduler::new(&time_configuration, time_configuration.start_time(), 1);
 
         assert!(!game_time_scheduler.is_past_hard_stop());
-    }
-
-    #[test]
-    fn is_past_hard_stop_true_after_17_00() {
-        let time_configuration = TimeConfiguration::new(
-            GameTime::new(17, 30).unwrap(),
-            GameTime::new(12, 0).unwrap(),
-            GameTime::new(13, 30).unwrap(),
-            GameTime::new(0, 30).unwrap(),
-            GameTime::new(0, 0).unwrap(),
-        );
-
-        let game_time_scheduler =
-            GameTimeScheduler::new(&time_configuration, time_configuration.start_time(), 1);
-
-        assert!(game_time_scheduler.is_past_hard_stop());
     }
 }
