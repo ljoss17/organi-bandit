@@ -40,6 +40,18 @@ pub enum AppError {
         "start break needs to be configured after end break. Start break '{0}', end break: '{1}'"
     )]
     StartBreakAfterEndBreak(GameTime, GameTime),
+    #[error(
+        "hard stop '{0}' is too close to midnight for {1} games with {2} between them; the slot after the last game would run past midnight"
+    )]
+    HardStopTooCloseToMidnight(GameTime, GameTime, GameTime),
+    #[error(
+        "the first game starting at '{0}' would end after the hard stop '{1}'; start earlier, shorten the games or set a later hard stop"
+    )]
+    FirstGameEndsAfterHardStop(GameTime, GameTime),
+    #[error(
+        "the first game after the break ending at '{0}' would end after the hard stop '{1}'; end the break earlier, shorten the games or set a later hard stop"
+    )]
+    FirstGameAfterBreakEndsAfterHardStop(GameTime, GameTime),
     #[error("failed to resolve resource path")]
     ResourceResolveError(#[from] tauri::Error),
     #[error("{0} at {1} is not a valid local time (daylight saving transition)")]
@@ -60,10 +72,6 @@ pub enum AppError {
     InsufficientDailyCapacity(u32, u32),
     #[error("cannot subtract {1} from {0}: {1} is later in the day than {0}")]
     GameTimeSubtractionUnderflow(GameTime, GameTime),
-    #[error(
-        "the games configured for each day do not fit before midnight when play starts at {0}; start earlier, shorten the games or the break, add fields, or reduce the time between games"
-    )]
-    ScheduleRunsPastMidnight(GameTime),
     #[error("the next 10 dates starting from {0} are all excluded")]
     NoStartDate(NaiveDate),
     #[error(

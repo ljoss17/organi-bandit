@@ -126,7 +126,9 @@ mod tests {
             GameTime::new(13, 30).unwrap(),
             GameTime::new(0, 45).unwrap(),
             GameTime::new(0, 15).unwrap(),
-        );
+            GameTime::new(17, 0).unwrap(),
+        )
+        .unwrap();
         let date_configuration = DateConfiguration::new(
             NaiveDate::from_ymd_opt(2026, 5, 13).unwrap(),
             vec![Weekday::Sat],
@@ -156,6 +158,7 @@ mod tests {
             "endBreak": {"hour": 13, "minute": 0},
             "gameDuration": {"hour": 1, "minute": 0},
             "timeBetweenGames": {"hour": 0, "minute": 30},
+            "hardStop": {"hour": 17, "minute": 0},
             "numberFields": 2,
             "gameDays": ["Sat"],
             "excludedDates": []
@@ -178,6 +181,10 @@ mod tests {
         assert_eq!(
             time_configuration.interval_between_games(),
             GameTime::new(1, 30).unwrap()
+        );
+        assert_eq!(
+            time_configuration.hard_stop(),
+            &GameTime::new(17, 0).unwrap()
         );
     }
 }
