@@ -23,6 +23,7 @@
     "game-duration": "Game duration",
     "generate-schedule": "Generate schedule",
     "generating": "Generating the schedule...",
+    "hard-stop": "Games end by",
     "hour-placeholder": "HH",
     "minute-placeholder": "MM",
     "new-teams-file": "Create new teams file...",

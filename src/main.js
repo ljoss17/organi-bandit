@@ -366,10 +366,20 @@ document.getElementById("browse-output-folder").addEventListener("click", async 
   }
 });
 
-function readGameTime(fieldPrefix) {
+// Games have to end by this time unless the user sets another one.
+const DEFAULT_HARD_STOP = { hour: 17, minute: 0 };
+
+// When both inputs are left empty and a fallback is given, the fallback is
+// used instead of reading the blanks as 00:00.
+function readGameTime(fieldPrefix, fallback = null) {
+  const hours = document.getElementById(`${fieldPrefix}-hours`).value;
+  const minutes = document.getElementById(`${fieldPrefix}-minutes`).value;
+  if (fallback && hours === "" && minutes === "") {
+    return { ...fallback };
+  }
   return {
-    hour: Number(document.getElementById(`${fieldPrefix}-hours`).value) || 0,
-    minute: Number(document.getElementById(`${fieldPrefix}-minutes`).value) || 0,
+    hour: Number(hours) || 0,
+    minute: Number(minutes) || 0,
   };
 }
 
@@ -445,6 +455,7 @@ function collectSeasonInput() {
   const timeBetweenGames = readGameTime("time-between-games");
   const startBreak = readGameTime("start-break");
   const endBreak = readGameTime("end-break");
+  const hardStop = readGameTime("hard-stop", DEFAULT_HARD_STOP);
   const gameDays = Array.from(document.querySelectorAll('input[name="game-days"]:checked')).map(
     (checkbox) => checkbox.value,
   );
@@ -458,6 +469,7 @@ function collectSeasonInput() {
     timeBetweenGames,
     startBreak,
     endBreak,
+    hardStop,
     gameDays,
     excludedDates: collectExcludedDates(),
     singleGamePerWeek,
@@ -506,6 +518,7 @@ document.getElementById("generate-schedule").addEventListener("click", async () 
     timeBetweenGames,
     startBreak,
     endBreak,
+    hardStop,
     gameDays,
     excludedDates,
     singleGamePerWeek,
@@ -535,6 +548,7 @@ document.getElementById("generate-schedule").addEventListener("click", async () 
         endBreak,
         gameDuration,
         timeBetweenGames,
+        hardStop,
         numberFields,
         gameDays,
         excludedDates,
