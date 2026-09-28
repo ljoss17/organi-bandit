@@ -8,6 +8,23 @@ Unreleased changes are tracked as fragments in [`changelog.d/`](changelog.d/READ
 
 <!-- towncrier release notes start -->
 
+## [0.3.0] - 2026-09-28
+
+### Added
+
+- Add a button to create a new teams file, which then becomes the one the team editor reads and saves. ([#19](https://github.com/ljoss17/organi-bandit/issues/19))
+- Add a progress message while a schedule is being generated, with the configuration locked until it finishes. ([#23](https://github.com/ljoss17/organi-bandit/issues/23))
+- Add a setting for the time games have to end by each day, which defaults to 17:00. ([#25](https://github.com/ljoss17/organi-bandit/issues/25))
+
+### Fixed
+
+- Fix validation of the team list and season times before a schedule is generated: reserved "Bye" names, duplicate teams, breaks falling outside the playing day, and days of games running past midnight are now rejected. ([#20](https://github.com/ljoss17/organi-bandit/issues/20))
+
+### Changed
+
+- Restyle the UI with a football-field look, a single crest in a new header bar, and the settings grouped into labelled sections laid out in two columns. ([#26](https://github.com/ljoss17/organi-bandit/issues/26))
+
+
 ## [0.2.1] - 2026-09-07
 
 ### Fixed
